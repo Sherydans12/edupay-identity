@@ -1,0 +1,70 @@
+# Dependencies and package-manager output
+node_modules/
+.pnp/
+.pnp.js
+
+# TypeScript / NestJS / Next.js build output
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Logs and local runtime files
+*.log
+*.tmp
+*.temp
+*.pid
+*.pid.lock
+tmp/
+temp/
+runtime/
+
+# Environment files (keep the committed template)
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Local database files and dumps
+db-dumps/
+database-dumps/
+local-db/
+*.dump
+*.dump.sql
+*.backup
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+
+# Secrets, signing keys, certificates, and local secret stores
+.secrets/
+secrets/
+local-secrets/
+private-keys/
+jwt-keys/
+jwt-signing-keys/
+certs/
+certificates/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.jwk
+*.token
+*.secret
+
+# Local package-manager credentials
+.npmrc
