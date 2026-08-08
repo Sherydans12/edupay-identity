@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module.js';
 import { JwtModule } from './jwt/jwt.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { SecurityModule } from './security/security.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SecurityModule } from './security/security.module.js';
     PersistenceModule,
     SecurityModule,
     JwtModule,
+    AuthModule,
     HealthModule,
   ],
   providers: [GlobalExceptionFilter, RequestIdMiddleware],

@@ -1,6 +1,7 @@
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Catch, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { SafeHttpException } from './safe-http.exception.js';
 
 const ERROR_CODES: Partial<Record<HttpStatus, string>> = {
   [HttpStatus.BAD_REQUEST]: 'VALIDATION_FAILED',
@@ -29,12 +30,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = host.switchToHttp().getResponse<Response>();
     const request = host.switchToHttp().getRequest<Request>();
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
+    const safeError = exception instanceof SafeHttpException ? exception.safeError : undefined;
 
     response.status(status).json({
       error: {
-        code: ERROR_CODES[status as HttpStatus] ?? 'INTERNAL_ERROR',
-        message: SAFE_MESSAGES[status as HttpStatus] ?? 'An unexpected error occurred.',
-        details: [],
+        code: safeError?.code ?? ERROR_CODES[status as HttpStatus] ?? 'INTERNAL_ERROR',
+        message: safeError?.message ?? SAFE_MESSAGES[status as HttpStatus] ?? 'An unexpected error occurred.',
+        details: safeError?.details ?? [],
         requestId: request.requestId,
       },
     });

@@ -27,6 +27,14 @@ export const environmentSchema = z
     ARGON2_HASH_LENGTH: integerFromEnvironment,
     ARGON2_SALT_LENGTH: integerFromEnvironment,
     OPAQUE_TOKEN_BYTES: integerFromEnvironment.min(32),
+    REFRESH_IDLE_TTL_SECONDS: integerFromEnvironment.max(2_592_000).default(2_592_000),
+    SESSION_ABSOLUTE_TTL_SECONDS: integerFromEnvironment.max(7_776_000).default(7_776_000),
+    LOGOUT_ALL_REAUTH_MAX_AGE_SECONDS: integerFromEnvironment.max(3_600).default(600),
+    PASSWORD_LOCK_THRESHOLD: integerFromEnvironment.max(100).default(10),
+    PASSWORD_LOCK_SECONDS: integerFromEnvironment.max(86_400).default(900),
+    RATE_LIMIT_WINDOW_SECONDS: integerFromEnvironment.max(3_600).default(900),
+    RATE_LIMIT_LOGIN_MAX: integerFromEnvironment.max(1_000).default(10),
+    RATE_LIMIT_REFRESH_MAX: integerFromEnvironment.max(10_000).default(60),
   });
 
 export type Environment = z.infer<typeof environmentSchema>;

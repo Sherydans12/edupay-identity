@@ -25,6 +25,7 @@
     "test:e2e": "pnpm prisma:generate && vitest run test/application.e2e-spec.ts",
     "test:integration": "pnpm prisma:generate && vitest run test/persistence.integration-spec.ts",
     "keys:generate:dev": "node scripts/generate-development-keys.mjs",
+    "contract:verify:jwks": "node scripts/verify-academico-jwks-contract.mjs",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate:deploy": "prisma migrate deploy",

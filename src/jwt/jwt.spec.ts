@@ -1,13 +1,14 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { exportJWK, importJWK, jwtVerify } from 'jose';
+import { exportJWK, importJWK, importPKCS8, jwtVerify, SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Environment } from '../config/environment.js';
 import { JwksService } from './jwks.service.js';
 import { JwtSigningService } from './jwt-signing.service.js';
+import { JwtVerificationService } from './jwt-verification.service.js';
 
 describe('JWT and JWKS foundation', () => {
   let directory: string;
@@ -111,5 +112,49 @@ describe('JWT and JWKS foundation', () => {
     await writeFile(jwksPath, JSON.stringify({ keys: [{ ...publicJwk, d: 'private-material' }] }));
     const unsafeJwks = new JwksService(createConfig());
     await expect(unsafeJwks.getPublicJwks()).rejects.toThrow('private key material');
+  });
+
+  it('validates the complete consumer contract and rejects malformed or expired tokens', async () => {
+    const config = createConfig();
+    const jwks = new JwksService(config);
+    const verifier = new JwtVerificationService(config, jwks);
+    const signer = new JwtSigningService(config);
+    const valid = await signer.signAccessToken({
+      userId: '00000000-0000-4000-8000-000000000001',
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      jwtId: '00000000-0000-4000-8000-000000000003',
+      scope: ['academic:use'],
+      authenticationMethods: ['password'],
+      authenticatedAt: Math.floor(Date.now() / 1_000),
+    });
+
+    await expect(verifier.verifyAccessToken(valid)).resolves.toMatchObject({
+      iss: 'https://identity.test.edupay.example',
+      aud: 'edupay-academico-api',
+      sub: '00000000-0000-4000-8000-000000000001',
+      sid: '00000000-0000-4000-8000-000000000002',
+      scope: ['academic:use'],
+      amr: ['password'],
+    });
+    await expect(verifier.verifyAccessToken('not-a-jwt')).rejects.toBeDefined();
+
+    const privateKey = await importPKCS8(await readFile(privateKeyPath, 'utf8'), 'RS256');
+    const now = Math.floor(Date.now() / 1_000);
+    const expired = await new SignJWT({
+      sid: '00000000-0000-4000-8000-000000000002',
+      scope: ['academic:use'],
+      amr: ['password'],
+      auth_time: now - 700,
+    })
+      .setProtectedHeader({ alg: 'RS256', kid: 'test-key-1', typ: 'JWT' })
+      .setIssuer('https://identity.test.edupay.example')
+      .setAudience('edupay-academico-api')
+      .setSubject('00000000-0000-4000-8000-000000000001')
+      .setJti('00000000-0000-4000-8000-000000000003')
+      .setIssuedAt(now - 700)
+      .setNotBefore(now - 700)
+      .setExpirationTime(now - 100)
+      .sign(privateKey);
+    await expect(verifier.verifyAccessToken(expired)).rejects.toBeDefined();
   });
 });
