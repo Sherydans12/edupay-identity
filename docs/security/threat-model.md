@@ -1,7 +1,8 @@
 # EduPay Identity threat model
 
-Status: proposed security baseline
+Status: approved security baseline
 Date: 2026-08-08
+Accepted: 2026-08-08
 
 ## Assets and trust boundaries
 
@@ -13,6 +14,7 @@ Date: 2026-08-08
 - Invitation, recovery, and no-email activation secrets.
 - Authentication and membership audit evidence.
 - The trusted tenant/membership context consumed by EduPay Académico.
+- The canonical ecosystem tenant identifier exchanged between independent services.
 
 ### Trust boundaries
 
@@ -33,6 +35,7 @@ Date: 2026-08-08
 | JWT theft | Temporary unauthorized access | TLS, safe browser storage, 10-minute expiry, audience/issuer validation, high-risk online checks | Token validation tests |
 | Signing-key compromise | Forged tokens | Asymmetric keys, JWKS, KID rotation, secret-manager custody, overlap/revocation runbook | Key rotation exercise |
 | Tenant-ID tampering | Cross-tenant access | Membership-derived context, token-issued active membership, scoped repositories, explicit support context | Two-tenant negative suite |
+| Canonical tenant-ID confusion or cross-service coupling | Wrong tenant mapping or loss of service independence | Same stable logical tenant identifier in each service, authenticated contract exchange, no cross-service foreign keys or direct database access | Contract and boundary review |
 | Role claim abuse/staleness | Privilege escalation | Validate signature/audience/expiry, session revocation, bounded staleness, fresh checks for high-risk actions, resource policies in Académico | Role-change and stale-token tests |
 | Invitation link theft/replay | Unauthorized account activation | Random one-time hash-only tokens, expiry, single use, tenant confirmation, revocation, audit | Expiry/replay tests |
 | No-email activation-code observation | Student account takeover | One-time code, short expiry, attempt limits, protected one-time admin display, no logs, regeneration, no permanent admin password | Handoff and guessing tests |
@@ -55,4 +58,3 @@ Date: 2026-08-08
 - Identity and Académico correlate events through request/correlation IDs and `sid`, but each service owns its audit stream.
 - Restore testing proves that revocation, invitation, and audit state are backed up consistently enough for the agreed RTO/RPO.
 - Security review occurs before exposing the no-email activation handoff to a pilot school.
-

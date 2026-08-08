@@ -1,11 +1,16 @@
 # EduPay Identity architecture
 
-Status: proposed; ownership boundaries and security properties are mandated, implementation defaults require review
+Status: approved architecture baseline; operational tunables remain implementation/configuration concerns
 Date: 2026-08-08
+Accepted: 2026-08-08
 
 ## 1. Identity domain model
 
 Identity separates the person who authenticates from the tenant-scoped access they hold.
+
+### Canonical ecosystem tenant identifier
+
+The `TENANT_REALM.id` value, exposed as `tenantId` in Identity contracts, is the canonical ecosystem tenant identifier. EduPay Académico stores the same stable logical identifier on its tenant record. The two services own independent tenant records and databases: there are no cross-service foreign keys, shared tables, or direct database reads. The canonical identifier is exchanged only through authenticated JWT, API, and event contracts. A tenant handle or client-provided tenant value is a discovery/selection input, never authorization proof.
 
 ```mermaid
 erDiagram
@@ -111,7 +116,7 @@ erDiagram
 | `IdentityUser` | Stable person/account identity | Does not contain tenant role or academic role; disabling it blocks authentication everywhere. |
 | `LoginIdentifier` | Username or email used to locate a user | Username is tenant-scoped and may exist without email. Email is optional and has a separate normalization/verification policy. |
 | `PasswordCredential` | Argon2id password verifier and lockout state | Plaintext passwords are never stored, logged, or returned. |
-| `TenantRealm` | Minimal identity-facing tenant/realm reference | Holds handle/status needed for login discovery and membership; it is not the academic tenant aggregate or configuration owner. |
+| `TenantRealm` | Minimal identity-facing tenant/realm reference | Its stable `id` is the canonical ecosystem tenant identifier; it holds only handle/status needed for login discovery and membership and is not the academic tenant aggregate or configuration owner. |
 | `TenantMembership` | A user’s access relationship to one tenant | Status and activation state are membership-scoped. One user may have many memberships. |
 | `Role` / role assignment | Platform and tenant role assignment | Membership roles are tenant-scoped; `SYSTEM_ADMIN` is a separate platform-scoped assignment and requires explicit elevation for tenant support. |
 | `Session` | A revocable login instance | Owns refresh-token family, device metadata, active membership context, and audit correlation. |
@@ -184,17 +189,17 @@ The plaintext code is never returned after creation, written to logs, included i
 
 ## 4. Session architecture
 
-### Recommended MVP defaults
+### Approved MVP baseline
 
-| Item | Proposed default |
+| Item | Approved baseline |
 | --- | --- |
-| Access token | JWT signed with an asymmetric key; 10-minute expiry; no sensitive profile data. |
-| Refresh token | 256-bit or longer random opaque secret; 30-day idle expiry and 90-day absolute session limit, subject to operations approval. |
+| Access token | JWT signed with an asymmetric key; maximum 10-minute expiry; no sensitive profile data. |
+| Refresh token | 256-bit or longer random opaque secret; 30-day idle target and 90-day absolute session target. |
 | Refresh rotation | Every refresh request invalidates the presented token and creates a replacement in the same family. |
 | Reuse response | Revoke the token family and session, audit `REFRESH_TOKEN_REUSE`, require fresh login. |
 | Session revocation | Immediate in Identity; consuming APIs enforce a maximum access-token staleness of 10 minutes, with online checks for high-risk operations. |
 | Key rotation | Publish signing keys through a JWKS endpoint; support overlapping old/new keys during rotation. |
-| Cookie/browser storage | Prefer an HttpOnly, Secure, SameSite refresh cookie for browser clients; keep access tokens in memory where practical. Exact web topology is an implementation decision. |
+| Cookie/browser storage | Use an `HttpOnly` + `Secure` refresh cookie for browser clients where topology permits; keep access tokens in memory where practical. SameSite and CSRF details remain operational topology decisions. |
 | Device metadata | Store coarse user-agent/device label and IP metadata subject to privacy/retention policy; never store secrets. |
 
 Refresh tokens are stored as salted hashes with token family, issued time, expiry, used/revoked time, and session reference. A transaction must mark a token used and create its replacement atomically. Concurrent reuse is treated as suspicious.
@@ -258,7 +263,9 @@ MVP role semantics:
 | `STUDENT` | One membership/tenant | Authentication as a student in that tenant | Enrollment, published content, and own submission access. |
 | `GUARDIAN` | Future tenant membership | Reserved role code and data model compatibility | No MVP UI or permissions. |
 
-Role assignment changes are audited, invalidate affected sessions, and take effect on newly issued access tokens. Academic service policies remain the final resource-level authorization layer.
+Identity grants tenant membership roles only. It does not decide which subject a teacher may access, which student roster a teacher sees, learning-content visibility, assignment ownership, or submission ownership. Those are EduPay Académico resource policies.
+
+Role assignment changes are audited, invalidate affected sessions, and take effect on newly issued access tokens. `SYSTEM_ADMIN` does not automatically become a tenant member; tenant support requires an explicit elevated support context with a reason and audit record. User impersonation is out of scope for MVP. Academic service policies remain the final resource-level authorization layer.
 
 ## 6. Authorization boundary with EduPay Académico
 
@@ -305,7 +312,7 @@ The existing EduPay administrative login is a separate trust domain. Identity do
 
 See the [threat model](../security/threat-model.md) for threats, mitigations, and required evidence.
 
-## 8. Implementation boundaries and unresolved decisions
+## 8. Implementation boundaries and remaining unresolved decisions
 
 ### In scope for the first Identity implementation
 
@@ -326,15 +333,14 @@ See the [threat model](../security/threat-model.md) for threats, mitigations, an
 - Automatic identity linking based only on matching names or unverified email.
 - Impersonation without a separate support/security decision.
 
-### Decisions required before implementation freeze
+All eight Identity architecture decisions are accepted by owner approval dated 2026-08-08 and are recorded in the [ADR index](../decisions/README.md). They are no longer unresolved prerequisites for implementation bootstrap.
 
-| ID | Decision | Recommended default |
-| --- | --- | --- |
-| ID-01 | Active tenant context shape | Short-lived access token contains the selected membership context; switch endpoint issues a new token. |
-| ID-02 | Username uniqueness | Unique within a tenant realm after Unicode-safe normalization; login requires a tenant handle when ambiguity exists. |
-| ID-03 | Email uniqueness | One verified email maps to one Identity user globally; duplicate unverified values remain pending and never auto-link. |
-| ID-04 | Identity tenant registry ownership | Identity owns only the minimal realm reference; Académico owns academic tenant configuration. |
-| ID-05 | Linking initiation | Académico initiates an explicit, audited link through a restricted service contract; Identity returns minimum necessary identity data. |
-| ID-06 | Revocation staleness | 10-minute access-token ceiling; online status checks for high-risk actions. |
-| ID-07 | Notification operations | Identity outbox plus Resend adapter; invitation state is durable independently of email delivery. |
-| ID-08 | Existing-admin coexistence | Separate trust domains initially; no migration or federation. |
+The following operational or implementation choices remain unresolved and must not be silently invented:
+
+- Exact Argon2id parameters, rate-limit buckets, lockout thresholds, and abuse-response tuning.
+- Browser cookie domain/SameSite/CSRF topology and access-token client storage details.
+- JWT acceptable clock skew, signing-key overlap/retirement timings, and secret-manager operations.
+- Device/IP metadata retention and privacy settings.
+- Elevated support-context grant, duration, allowed actions, and audit-retention policy.
+- Event transport, worker deployment, retry/dead-letter settings, and production Resend operations.
+- TenantRealm provisioning/lifecycle workflow and the operational owner for canonical tenant-ID allocation.

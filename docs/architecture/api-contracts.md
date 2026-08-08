@@ -1,16 +1,20 @@
 # EduPay Identity API contracts
 
-Status: proposed REST/JSON contract for review
+Status: approved REST/JSON integration contract baseline
 Date: 2026-08-08
+Accepted: 2026-08-08
 
-The contract follows the Académico baseline convention: versioned REST/JSON under `/api/v1`, opaque IDs, boundary validation, explicit errors, correlation IDs, and OpenAPI documentation. JSON names are camelCase in this proposal.
+The contract follows the Académico baseline convention: versioned REST/JSON under `/api/v1`, opaque IDs, boundary validation, explicit errors, correlation IDs, and OpenAPI documentation. JSON names are camelCase.
+
+The `tenantId` carried in an Identity tenant context is the canonical ecosystem tenant identifier. It is the same stable logical identifier used by the corresponding Académico tenant record. Each service persists its own tenant record and database; no cross-service foreign key or direct table access exists. Authenticated JWT, API, and event contracts are the only exchange paths for this identifier.
 
 ## Common rules
 
 - `Authorization: Bearer <accessToken>` is required for authenticated endpoints.
 - `X-Request-Id` is accepted or generated at the edge and returned in responses.
-- A URL or body `tenantId` identifies a target resource only; it never grants tenant authorization.
+- A URL or body `tenantId` identifies a target resource only; it never grants tenant authorization. The server compares it with the trusted Identity context and rejects or ignores a conflict according to the endpoint contract.
 - Management endpoints require an active membership context or explicit system-admin support context.
+- High-risk management and academic-linking operations may require an online current-session or current-membership validation even when the access JWT is otherwise valid.
 - Mutation endpoints that create invitations, activation challenges, or sessions are idempotent where a client retry could duplicate state.
 - Error responses use a stable envelope:
 
@@ -94,7 +98,7 @@ Consumes a no-email activation challenge, institutional username, and new passwo
 
 ## Membership management endpoints
 
-These endpoints are intended for EduPay Académico’s backend adapter or an Identity administration client. The caller must be authorized by Identity and the target tenant must be derived from the caller’s current membership/support context.
+These endpoints are intended for EduPay Académico’s backend adapter or an Identity administration client. The caller must be authorized by Identity and the target canonical tenant ID must be derived from the caller’s current membership/support context.
 
 When Académico calls on behalf of a signed-in tenant administrator, the adapter must propagate the end-user actor identity and correlation ID in an authenticated service-to-service envelope. A service credential alone is not sufficient to grant a human tenant-admin action. Identity authorizes the propagated actor, the target membership, and any explicit support context before mutating state.
 
@@ -143,7 +147,7 @@ Operational health only; must not disclose tenant/user data.
 
 ### `POST /internal/v1/identity-users/resolve`
 
-Restricted service-to-service endpoint for deliberate academic linking. Request may contain an exact normalized identifier and tenant context. Response is minimal: `userId`, safe verification status, and matching reason. It must not support unbounded directory search or return credentials, tokens, or unnecessary profile data.
+Restricted service-to-service endpoint for deliberate academic linking. Request may contain an exact normalized identifier and the canonical tenant context. Response is minimal: `userId`, safe verification status, and matching reason. It must not support unbounded directory search or return credentials, tokens, or unnecessary profile data.
 
 The Academic API owns the link mutation on its `Student`/`Teacher` record. Identity may record the service actor and return a link-verification audit event, but does not create or own the academic link.
 

@@ -1,7 +1,8 @@
 # EduPay Identity testing strategy
 
-Status: proposed quality baseline
+Status: approved quality baseline
 Date: 2026-08-08
+Accepted: 2026-08-08
 
 Identity testing must prove both successful access and failure containment. A coverage percentage alone is not a release gate.
 
@@ -18,6 +19,7 @@ Cover deterministic domain and security rules:
 - activation, invitation, and reset state transitions;
 - password policy and hash-parameter upgrade decisions;
 - JWT claim construction and omission of tenant context when no membership is active;
+- canonical ecosystem tenant-ID construction and rejection of client-supplied tenant authorization;
 - refresh-token rotation, reuse detection, and session revocation;
 - rate-limit bucket and lockout behavior;
 - safe error mapping that prevents user/tenant enumeration;
@@ -44,6 +46,7 @@ Verify the OpenAPI/JWKS/session contracts consumed by EduPay Académico:
 
 - token signature, issuer, audience, expiry, and claim shape;
 - active tenant context and membership switching;
+- canonical tenant-ID compatibility with the Académico tenant context;
 - `SYSTEM_ADMIN` behavior without implicit tenant access;
 - minimum identity-link lookup response;
 - stable error envelope and status codes;
@@ -66,6 +69,7 @@ At minimum, exercise:
 9. Invitation resend is idempotent and prior unused tokens are invalidated according to policy.
 10. Academic API accepts a valid Identity token but still rejects unauthorized subject/course/resource access.
 11. Existing EduPay admin credentials/cookies are not accepted by Identity and no existing-login behavior changes.
+12. Identity and Académico exchange the canonical tenant ID through authenticated contracts while retaining independent databases and no cross-service foreign keys.
 
 ## Security and abuse tests
 
@@ -105,4 +109,3 @@ Fixtures contain synthetic data only. Tests must never use real student, teacher
 - refresh reuse and session-revocation evidence;
 - invitation and no-email activation failure/retry evidence;
 - operational health, backup/restore, incident, and rollback runbooks before production pilot.
-
