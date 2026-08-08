@@ -1,0 +1,297 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum IdentityUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum LoginIdentifierKind {
+  USERNAME
+  EMAIL
+}
+
+enum TenantRealmStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MembershipStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum RoleCode {
+  SYSTEM_ADMIN
+  TENANT_ADMIN
+  TEACHER
+  STUDENT
+  GUARDIAN
+}
+
+enum RoleScope {
+  PLATFORM
+  TENANT
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+model IdentityUser {
+  id                  String               @id @default(uuid()) @db.Uuid
+  status              IdentityUserStatus   @default(ACTIVE)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+  disabledAt          DateTime?            @db.Timestamptz(3)
+  loginIdentifiers    LoginIdentifier[]
+  passwordCredential  PasswordCredential?
+  memberships         TenantMembership[]
+  platformRoles       UserRole[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  auditEvents         AuthAuditEvent[]
+
+  @@map("identity_users")
+}
+
+model LoginIdentifier {
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String              @db.Uuid
+  tenantRealmId   String?             @db.Uuid
+  kind            LoginIdentifierKind
+  normalizedValue String
+  verifiedAt      DateTime?           @db.Timestamptz(3)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
+  user            IdentityUser        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenantRealm     TenantRealm?        @relation(fields: [tenantRealmId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantRealmId, kind, normalizedValue], map: "login_identifiers_realm_kind_value_key")
+  @@index([userId, kind], map: "login_identifiers_user_kind_idx")
+  @@index([kind, normalizedValue], map: "login_identifiers_kind_value_idx")
+  @@map("login_identifiers")
+}
+
+model PasswordCredential {
+  userId             String       @id @db.Uuid
+  passwordHash       String
+  passwordSetAt      DateTime     @db.Timestamptz(3)
+  failedAttemptCount Int          @default(0)
+  lockedUntil        DateTime?    @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(3)
+  user               IdentityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_credentials")
+}
+
+model TenantRealm {
+  // This is the canonical opaque ecosystem tenant ID. Allocation remains external to this bootstrap.
+  id               String             @id @db.Uuid
+  handle           String             @unique
+  status           TenantRealmStatus  @default(ACTIVE)
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(3)
+  loginIdentifiers LoginIdentifier[]
+  memberships      TenantMembership[]
+  auditEvents      AuthAuditEvent[]
+
+  @@map("tenant_realms")
+}
+
+model TenantMembership {
+  id                   String                @id @default(uuid()) @db.Uuid
+  userId               String                @db.Uuid
+  tenantRealmId        String                @db.Uuid
+  status               MembershipStatus      @default(PENDING_ACTIVATION)
+  activatedAt          DateTime?             @db.Timestamptz(3)
+  suspendedAt          DateTime?             @db.Timestamptz(3)
+  revokedAt            DateTime?             @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  user                 IdentityUser          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenantRealm          TenantRealm           @relation(fields: [tenantRealmId], references: [id], onDelete: Restrict)
+  roles                MembershipRole[]
+  sessions             Session[]             @relation("SessionActiveMembership")
+  invitations          Invitation[]
+  activationChallenges ActivationChallenge[]
+
+  @@unique([userId, tenantRealmId], map: "tenant_memberships_user_tenant_key")
+  @@unique([id, userId], map: "tenant_memberships_id_user_key")
+  @@index([tenantRealmId, status], map: "tenant_memberships_tenant_status_idx")
+  @@map("tenant_memberships")
+}
+
+model Role {
+  id                String           @id @default(uuid()) @db.Uuid
+  code              RoleCode         @unique
+  scope             RoleScope
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+  membershipRoles   MembershipRole[]
+  platformUserRoles UserRole[]
+
+  @@unique([id, scope], map: "roles_id_scope_key")
+  @@map("roles")
+}
+
+model MembershipRole {
+  membershipId String           @db.Uuid
+  roleId       String           @db.Uuid
+  roleScope    RoleScope        @default(TENANT)
+  assignedAt   DateTime         @default(now()) @db.Timestamptz(3)
+  membership   TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role         Role             @relation(fields: [roleId, roleScope], references: [id, scope], onDelete: Restrict)
+
+  @@id([membershipId, roleId])
+  @@map("membership_roles")
+}
+
+model UserRole {
+  userId     String       @db.Uuid
+  roleId     String       @db.Uuid
+  roleScope  RoleScope    @default(PLATFORM)
+  assignedAt DateTime     @default(now()) @db.Timestamptz(3)
+  user       IdentityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role         @relation(fields: [roleId, roleScope], references: [id, scope], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Session {
+  id                   String            @id @default(uuid()) @db.Uuid
+  userId               String            @db.Uuid
+  activeMembershipId   String?           @db.Uuid
+  refreshTokenFamilyId String            @unique @default(uuid()) @db.Uuid
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  lastSeenAt           DateTime          @default(now()) @db.Timestamptz(3)
+  idleExpiresAt        DateTime          @db.Timestamptz(3)
+  absoluteExpiresAt    DateTime          @db.Timestamptz(3)
+  revokedAt            DateTime?         @db.Timestamptz(3)
+  revocationReason     String?
+  deviceLabel          String?
+  user                 IdentityUser      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  activeMembership     TenantMembership? @relation("SessionActiveMembership", fields: [activeMembershipId, userId], references: [id, userId], onDelete: Restrict)
+  refreshTokens        RefreshToken[]
+  auditEvents          AuthAuditEvent[]
+
+  @@unique([id, refreshTokenFamilyId], map: "sessions_id_refresh_family_key")
+  @@index([userId, revokedAt], map: "sessions_user_revoked_idx")
+  @@index([activeMembershipId], map: "sessions_active_membership_idx")
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id            String        @id @db.Uuid
+  sessionId     String        @db.Uuid
+  familyId      String        @db.Uuid
+  tokenHash     String
+  rotatedFromId String?       @unique @db.Uuid
+  issuedAt      DateTime      @default(now()) @db.Timestamptz(3)
+  expiresAt     DateTime      @db.Timestamptz(3)
+  usedAt        DateTime?     @db.Timestamptz(3)
+  revokedAt     DateTime?     @db.Timestamptz(3)
+  session       Session       @relation(fields: [sessionId, familyId], references: [id, refreshTokenFamilyId], onDelete: Cascade)
+  rotatedFrom   RefreshToken? @relation("RefreshTokenRotation", fields: [rotatedFromId], references: [id], onDelete: Restrict)
+  replacement   RefreshToken? @relation("RefreshTokenRotation")
+
+  @@index([sessionId, familyId], map: "refresh_tokens_session_family_idx")
+  @@map("refresh_tokens")
+}
+
+model Invitation {
+  id           String           @id @db.Uuid
+  membershipId String           @db.Uuid
+  tokenHash    String
+  expiresAt    DateTime         @db.Timestamptz(3)
+  acceptedAt   DateTime?        @db.Timestamptz(3)
+  revokedAt    DateTime?        @db.Timestamptz(3)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+  membership   TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, expiresAt], map: "invitations_membership_expiry_idx")
+  @@map("invitations")
+}
+
+model ActivationChallenge {
+  id                 String           @id @db.Uuid
+  membershipId       String           @db.Uuid
+  codeHash           String
+  failedAttemptCount Int              @default(0)
+  expiresAt          DateTime         @db.Timestamptz(3)
+  consumedAt         DateTime?        @db.Timestamptz(3)
+  revokedAt          DateTime?        @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  membership         TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, expiresAt], map: "activation_challenges_membership_expiry_idx")
+  @@map("activation_challenges")
+}
+
+model PasswordResetToken {
+  id         String       @id @db.Uuid
+  userId     String       @db.Uuid
+  tokenHash  String
+  expiresAt  DateTime     @db.Timestamptz(3)
+  consumedAt DateTime?    @db.Timestamptz(3)
+  revokedAt  DateTime?    @db.Timestamptz(3)
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  user       IdentityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt], map: "password_reset_tokens_user_expiry_idx")
+  @@map("password_reset_tokens")
+}
+
+model AuthAuditEvent {
+  id            String        @id @default(uuid()) @db.Uuid
+  actorUserId   String?       @db.Uuid
+  tenantRealmId String?       @db.Uuid
+  sessionId     String?       @db.Uuid
+  eventType     String
+  outcome       AuditOutcome
+  requestId     String?
+  metadata      Json?
+  occurredAt    DateTime      @default(now()) @db.Timestamptz(3)
+  actorUser     IdentityUser? @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  tenantRealm   TenantRealm?  @relation(fields: [tenantRealmId], references: [id], onDelete: Restrict)
+  session       Session?      @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, occurredAt], map: "auth_audit_events_actor_time_idx")
+  @@index([tenantRealmId, occurredAt], map: "auth_audit_events_tenant_time_idx")
+  @@index([sessionId, occurredAt], map: "auth_audit_events_session_time_idx")
+  @@index([requestId], map: "auth_audit_events_request_idx")
+  @@map("auth_audit_events")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attemptCount  Int          @default(0)
+  availableAt   DateTime     @default(now()) @db.Timestamptz(3)
+  publishedAt   DateTime?    @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([status, availableAt], map: "outbox_events_status_available_idx")
+  @@map("outbox_events")
+}

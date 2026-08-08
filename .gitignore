@@ -9,6 +9,7 @@ build/
 .next/
 coverage/
 *.tsbuildinfo
+src/generated/prisma/
 
 # Logs and local runtime files
 *.log
@@ -65,6 +66,10 @@ certificates/
 *.jwk
 *.token
 *.secret
+
+# Developer-specific public JWKS files may be generated beside private keys.
+# Committed JWKS material requires an explicit security review.
+*.jwks.json
 
 # Local package-manager credentials
 .npmrc

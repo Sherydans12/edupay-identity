@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: ['main', 'chore/**', 'feat/**', 'fix/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: identity_ci
+          POSTGRES_USER: identity_ci
+          POSTGRES_PASSWORD: identity_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U identity_ci -d identity_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://identity_ci:identity_ci_only@localhost:5432/identity_ci
+      TEST_DATABASE_URL: postgresql://identity_ci:identity_ci_only@localhost:5432/identity_ci
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Validate schema and apply migrations
+        run: |
+          pnpm prisma:validate
+          pnpm prisma:migrate:deploy
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

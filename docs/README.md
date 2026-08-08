@@ -13,6 +13,10 @@ EduPay Identity is an independent centralized identity service for EduPay ecosys
 4. [Testing strategy](architecture/testing-strategy.md)
 5. [Accepted ADRs](decisions/README.md)
 
+Implementation notes that do not replace the accepted baseline:
+
+- [Application bootstrap](implementation/bootstrap.md)
+
 ## Governing constraints
 
 - Identity owns users, login identifiers, credentials, sessions, refresh tokens, tenant memberships, roles, invitations, activation, password recovery, and authentication audit events.
