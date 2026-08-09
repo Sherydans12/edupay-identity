@@ -1,11 +1,36 @@
 import type { INestApplication } from '@nestjs/common';
 import { RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { GlobalExceptionFilter } from './common/global-exception.filter.js';
+import type { Environment } from './config/environment.js';
+import { normalizeWebOrigin } from './security/browser-session.policy.js';
 
 export function configureApplication(app: INestApplication): void {
+  const config = app.get(ConfigService<Environment, true>);
+  const trustedOrigins = new Set(config.getOrThrow('IDENTITY_TRUSTED_WEB_ORIGINS'));
+
   app.use(helmet());
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, origin?: boolean | string) => void,
+    ) => {
+      if (!origin) {
+        callback(null, false);
+        return;
+      }
+      const normalizedOrigin = normalizeWebOrigin(origin);
+      callback(null, normalizedOrigin && trustedOrigins.has(normalizedOrigin) ? origin : false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    exposedHeaders: ['X-Request-Id'],
+    maxAge: 600,
+    optionsSuccessStatus: 204,
+  });
   app.setGlobalPrefix('api', {
     exclude: [{ path: '.well-known/jwks.json', method: RequestMethod.GET }],
   });

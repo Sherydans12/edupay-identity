@@ -31,6 +31,9 @@ describe('application bootstrap (e2e)', () => {
       JWT_PRIVATE_KEY_PATH: privateKeyPath,
       JWT_PUBLIC_JWKS_PATH: jwksPath,
       JWKS_CACHE_MAX_AGE_SECONDS: '300',
+      IDENTITY_TRUSTED_WEB_ORIGINS: 'https://academico.test',
+      IDENTITY_COOKIE_SECURE: 'true',
+      IDENTITY_REFRESH_COOKIE_SAMESITE: 'lax',
       ARGON2_MEMORY_COST: '8192',
       ARGON2_TIME_COST: '2',
       ARGON2_PARALLELISM: '1',
@@ -91,5 +94,28 @@ describe('application bootstrap (e2e)', () => {
       },
     });
     expect(response.body.error.requestId).toMatch(/^req_[0-9a-f-]{36}$/);
+  });
+
+  it('allows credentialed CORS only for an explicitly trusted origin', async () => {
+    const trusted = await request(app.getHttpServer())
+      .options('/api/v1/auth/refresh')
+      .set('Origin', 'https://academico.test')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type,authorization')
+      .expect(204);
+
+    expect(trusted.headers['access-control-allow-origin']).toBe('https://academico.test');
+    expect(trusted.headers['access-control-allow-credentials']).toBe('true');
+    expect(trusted.headers['access-control-allow-methods']).toContain('POST');
+    expect(trusted.headers['access-control-allow-origin']).not.toBe('*');
+
+    const untrusted = await request(app.getHttpServer())
+      .options('/api/v1/auth/refresh')
+      .set('Origin', 'https://evil.test')
+      .set('Access-Control-Request-Method', 'POST')
+      .expect(404);
+
+    expect(untrusted.headers['access-control-allow-origin']).toBeUndefined();
+    expect(untrusted.headers['access-control-allow-credentials']).not.toBe('true');
   });
 });

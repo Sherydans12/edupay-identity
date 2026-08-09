@@ -29,3 +29,8 @@ export interface TokenResponse {
   sessionId: string;
   activeMembership: ActiveMembershipContext | null;
 }
+
+export interface IssuedTokenResponse {
+  response: TokenResponse;
+  refreshExpiresAt: Date;
+}

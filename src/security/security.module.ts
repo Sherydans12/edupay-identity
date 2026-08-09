@@ -4,6 +4,7 @@ import { AuditService } from './audit.service.js';
 import { OpaqueTokenService } from './opaque-token.service.js';
 import { ConfiguredRateLimitPolicy, RateLimitPolicy } from './rate-limit.policy.js';
 import { TrustedTenantContextService } from './trusted-tenant-context.service.js';
+import { BrowserSessionPolicy } from './browser-session.policy.js';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { TrustedTenantContextService } from './trusted-tenant-context.service.js
     OpaqueTokenService,
     AuditService,
     TrustedTenantContextService,
+    BrowserSessionPolicy,
     { provide: RateLimitPolicy, useClass: ConfiguredRateLimitPolicy },
   ],
   exports: [
@@ -21,6 +23,7 @@ import { TrustedTenantContextService } from './trusted-tenant-context.service.js
     AuditService,
     TrustedTenantContextService,
     RateLimitPolicy,
+    BrowserSessionPolicy,
   ],
 })
 export class SecurityModule {}

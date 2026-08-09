@@ -138,11 +138,21 @@ Identity does not infer that a user is a student or teacher from an academic rec
 1. Client submits a login identifier, password, and optional tenant handle/device metadata.
 2. Identity normalizes the identifier and resolves the candidate user and tenant membership. A tenant handle is a discovery/selection hint, not authorization proof.
 3. Identity applies rate limits, account status, membership status, password verification, and lockout rules.
-4. On success, Identity creates a `Session`, selects or requires an active membership, issues a short-lived access JWT, and returns a rotated refresh token.
+4. On success, Identity creates a `Session`, selects or requires an active membership, issues a short-lived access JWT, and returns a rotated refresh token only to an explicit non-browser transport; trusted browser requests receive the refresh token only as an Identity `HttpOnly` cookie.
 5. Identity records a successful `LOGIN` audit event with safe metadata.
 6. On failure, Identity returns a generic error and records a failed attempt without revealing whether the username, email, tenant, or account exists.
 
 The login identifier is either an institutional username or email. Username and email are never treated as interchangeable fields. A username-only student can authenticate without an email address.
+
+### Browser session behavior
+
+Trusted web applications use the browser transport described in [ADR-0009](../decisions/ADR-0009-browser-session-topology.md):
+
+- Keep the access token in frontend memory only. Do not store it in `localStorage`, `sessionStorage`, `IndexedDB`, or a persistent JavaScript-readable cookie.
+- Send login and refresh requests to the Identity origin with credentials included. Login returns the access/session context and sets the Identity `HttpOnly` refresh cookie; it does not return the refresh secret in JSON.
+- Refresh with `POST /api/v1/auth/refresh` and credentials included. Identity reads and rotates the cookie and returns the new access token.
+- Logout with the in-memory access token and credentials included. Identity revokes the session and clears the refresh cookie.
+- Configure the exact frontend origin in `IDENTITY_TRUSTED_WEB_ORIGINS`; CORS is not a substitute for the required origin check.
 
 ### Multi-tenant sign-in
 
@@ -199,7 +209,7 @@ The plaintext code is never returned after creation, written to logs, included i
 | Reuse response | Revoke the token family and session, audit `REFRESH_TOKEN_REUSE`, require fresh login. |
 | Session revocation | Immediate in Identity; consuming APIs enforce a maximum access-token staleness of 10 minutes, with online checks for high-risk operations. |
 | Key rotation | Publish signing keys through a JWKS endpoint; support overlapping old/new keys during rotation. |
-| Cookie/browser storage | Use an `HttpOnly` + `Secure` refresh cookie for browser clients where topology permits; keep access tokens in memory where practical. SameSite and CSRF details remain operational topology decisions. |
+| Cookie/browser storage | Browser requests use an Identity-controlled host-only refresh cookie (`__Host-edupay-refresh` in secure mode), `HttpOnly`, `Secure`, `Path=/`, `SameSite=Lax` by default, and no `Domain`; access tokens remain in memory. Trusted-origin validation is independent of CORS. |
 | Device metadata | Store coarse user-agent/device label and IP metadata subject to privacy/retention policy; never store secrets. |
 
 Refresh tokens are stored as salted hashes with token family, issued time, expiry, used/revoked time, and session reference. A transaction must mark a token used and create its replacement atomically. Concurrent reuse is treated as suspicious.
@@ -237,7 +247,7 @@ Claim rules:
 - `tenant_id` and `membership_id` are present only when an active tenant context has been selected. They are Identity-issued context, not client input.
 - `roles` contains the roles effective for that membership at issuance time. It does not replace Académico resource authorization.
 - `SYSTEM_ADMIN` tokens without an active tenant context must not be treated as tenant access. Cross-tenant support requires a separate, explicit elevated context with a reason and audit record.
-- Tokens do not contain email, username, student/teacher data, or refresh tokens.
+- Tokens do not contain email, username, student/teacher data, or refresh tokens. Browser JSON responses also omit the opaque refresh secret.
 - `scope` is application/audience-specific and must not be interpreted as a tenant role.
 
 ## 5. Tenant membership and roles
@@ -309,6 +319,7 @@ The existing EduPay administrative login is a separate trust domain. Identity do
 - Protect browser flows against CSRF, XSS, open redirects, and token leakage; validate redirect destinations against an allowlist.
 - Keep Identity and Academic databases separate. Académico never reads Identity tables directly.
 - Make provider outage behavior visible and recoverable: invitation creation must not be lost if Resend is unavailable, and resend delivery is retried from an outbox.
+- For browser sessions, require an explicit trusted web-origin allowlist, reflect only allowlisted origins in credentialed CORS, reject cookie-authenticated requests with missing/untrusted origins, and clear the refresh cookie on logout, logout-all, invalid refresh, and reuse detection.
 
 See the [threat model](../security/threat-model.md) for threats, mitigations, and required evidence.
 
@@ -333,12 +344,12 @@ See the [threat model](../security/threat-model.md) for threats, mitigations, an
 - Automatic identity linking based only on matching names or unverified email.
 - Impersonation without a separate support/security decision.
 
-All eight Identity architecture decisions are accepted by owner approval dated 2026-08-08 and are recorded in the [ADR index](../decisions/README.md). They are no longer unresolved prerequisites for implementation bootstrap.
+All nine Identity architecture decisions are accepted by owner approval and are recorded in the [ADR index](../decisions/README.md). They are no longer unresolved prerequisites for implementation bootstrap.
 
 The following operational or implementation choices remain unresolved and must not be silently invented:
 
 - Exact Argon2id parameters, rate-limit buckets, lockout thresholds, and abuse-response tuning.
-- Browser cookie domain/SameSite/CSRF topology and access-token client storage details.
+- Production trusted web-origin ownership and cross-site deployment choice (`SameSite=Lax` versus explicitly secure `SameSite=None`) remain deployment configuration; the browser transport contract is fixed by [ADR-0009](../decisions/ADR-0009-browser-session-topology.md).
 - JWT acceptable clock skew, signing-key overlap/retirement timings, and secret-manager operations.
 - Device/IP metadata retention and privacy settings.
 - Elevated support-context grant, duration, allowed actions, and audit-retention policy.

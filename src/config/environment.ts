@@ -2,6 +2,36 @@ import { z } from 'zod';
 
 const integerFromEnvironment = z.coerce.number().int().positive();
 
+const trustedWebOriginsFromEnvironment = z.string().default('').transform((value, context) => {
+  const origins = value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  const normalizedOrigins = new Set<string>();
+
+  for (const origin of origins) {
+    try {
+      const parsed = new URL(origin);
+      if (
+        !['http:', 'https:'].includes(parsed.protocol) ||
+        parsed.username ||
+        parsed.password ||
+        (parsed.pathname !== '' && parsed.pathname !== '/') ||
+        parsed.search ||
+        parsed.hash
+      ) {
+        context.addIssue({ code: 'custom', message: 'must contain exact HTTP(S) origins only' });
+        continue;
+      }
+      normalizedOrigins.add(parsed.origin);
+    } catch {
+      context.addIssue({ code: 'custom', message: 'must contain exact HTTP(S) origins only' });
+    }
+  }
+
+  return [...normalizedOrigins];
+});
+
 export const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']),
@@ -38,6 +68,9 @@ export const environmentSchema = z
     RESEND_API_KEY: z.string().optional().default(''),
     IDENTITY_EMAIL_FROM: z.string().min(3).default('EduPay Identity <no-reply@identity.invalid>'),
     IDENTITY_PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
+    IDENTITY_TRUSTED_WEB_ORIGINS: trustedWebOriginsFromEnvironment,
+    IDENTITY_COOKIE_SECURE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+    IDENTITY_REFRESH_COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
     IDENTITY_EMAIL_INVITATION_TTL_SECONDS: integerFromEnvironment.max(604_800).default(86_400),
     IDENTITY_ACTIVATION_TTL_SECONDS: integerFromEnvironment.max(86_400).default(3_600),
     IDENTITY_PASSWORD_RESET_TTL_SECONDS: integerFromEnvironment.max(86_400).default(3_600),
@@ -46,6 +79,29 @@ export const environmentSchema = z
     OUTBOX_MAX_ATTEMPTS: integerFromEnvironment.max(20).default(5),
     OUTBOX_BASE_BACKOFF_SECONDS: integerFromEnvironment.max(3_600).default(30),
     IDENTITY_OUTBOX_ENCRYPTION_KEY: z.string().optional(),
+  })
+  .superRefine((environment, context) => {
+    if (environment.NODE_ENV === 'production' && !environment.IDENTITY_COOKIE_SECURE) {
+      context.addIssue({
+        code: 'custom',
+        path: ['IDENTITY_COOKIE_SECURE'],
+        message: 'must be true in production',
+      });
+    }
+    if (environment.IDENTITY_REFRESH_COOKIE_SAMESITE === 'none' && !environment.IDENTITY_COOKIE_SECURE) {
+      context.addIssue({
+        code: 'custom',
+        path: ['IDENTITY_COOKIE_SECURE'],
+        message: 'must be true when SameSite=None is selected',
+      });
+    }
+    if (environment.NODE_ENV === 'production' && environment.IDENTITY_TRUSTED_WEB_ORIGINS.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        path: ['IDENTITY_TRUSTED_WEB_ORIGINS'],
+        message: 'must contain at least one trusted origin in production',
+      });
+    }
   });
 
 export type Environment = z.infer<typeof environmentSchema>;

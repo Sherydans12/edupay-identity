@@ -31,8 +31,8 @@ Accepted: 2026-08-08
 | --- | --- | --- | --- |
 | Password guessing/credential stuffing | Account takeover | Argon2id, rate limits by IP/identifier/tenant, progressive backoff, lockout, generic errors, monitoring | Abuse tests and alert rehearsal |
 | Password/hash disclosure | Broad account compromise | Argon2id, secret redaction, restricted DB access, no plaintext secrets, rehash upgrades | Secret scan and database review |
-| Refresh-token theft | Persistent session takeover | Opaque hashed tokens, rotation, family reuse detection, secure cookies, session revocation, short access TTL | Concurrent rotation/reuse tests |
-| JWT theft | Temporary unauthorized access | TLS, safe browser storage, 10-minute expiry, audience/issuer validation, high-risk online checks | Token validation tests |
+| Refresh-token theft | Persistent session takeover | Opaque hashed tokens, rotation, family reuse detection, secure host-only `HttpOnly` cookies, browser-origin validation, session revocation, short access TTL | Concurrent rotation/reuse and browser-cookie tests |
+| JWT theft | Temporary unauthorized access | TLS, frontend-memory-only browser storage, 10-minute expiry, audience/issuer validation, high-risk online checks | Token validation and browser-response tests |
 | Signing-key compromise | Forged tokens | Asymmetric keys, JWKS, KID rotation, secret-manager custody, overlap/revocation runbook | Key rotation exercise |
 | Tenant-ID tampering | Cross-tenant access | Membership-derived context, token-issued active membership, scoped repositories, explicit support context | Two-tenant negative suite |
 | Canonical tenant-ID confusion or cross-service coupling | Wrong tenant mapping or loss of service independence | Same stable logical tenant identifier in each service, authenticated contract exchange, no cross-service foreign keys or direct database access | Contract and boundary review |
@@ -43,7 +43,7 @@ Accepted: 2026-08-08
 | Ambiguous username/email matching | Wrong-account login or privacy leak | Explicit identifier kinds, normalization, tenant realm scoping, ambiguity rejection, verified-email policy | Collision fixture tests |
 | Unauthorized academic linking | Wrong person gains academic access | Académico owns link, explicit service contract, exact matching/verification, deliberate admin action, audit, no name-only matching | Link conflict/authorization tests |
 | Over-privileged system-admin support | Broad data exposure | No implicit tenant context, explicit elevation/reason, step-up auth, scoped support session, audit, no silent impersonation | Support-path review |
-| CSRF/XSS/open redirect | Token theft or unwanted mutations | SameSite/CSRF protection, output encoding, allowlisted redirects, secure headers, input validation | Browser security tests |
+| CSRF/XSS/open redirect | Token theft or unwanted mutations | SameSite cookies, exact trusted-origin checks independent of CORS, Fetch Metadata defense in depth, output encoding, allowlisted redirects, secure headers, input validation | Browser origin/CORS and cookie tests |
 | Resend/provider outage | Activation cannot complete or state is lost | Durable invitation/outbox state, retries, idempotency, visible delivery status, manual resend | Provider-failure integration tests |
 | Audit tampering or secret leakage | Weak incident response/privacy harm | Append-only behavior, restricted reads, safe metadata allowlist, correlation IDs, retention policy | Redaction and access tests |
 | Replay of internal event/callback | Duplicate or cross-tenant mutation | Signed/authenticated callbacks, event IDs, timestamps, replay window, idempotent consumers, context recheck | Replay tests |
@@ -55,6 +55,7 @@ Accepted: 2026-08-08
 
 - Secrets and signing keys are managed outside source control and rotated by an owned runbook.
 - Authentication failures, refresh reuse, activation guessing, role changes, session revocations, and support elevations are observable without logging secrets.
+- Browser JSON responses, errors, audit metadata, and application logs must not contain refresh-cookie values; `Set-Cookie` headers are treated as secret-bearing output and are not logged.
 - Identity and Académico correlate events through request/correlation IDs and `sid`, but each service owns its audit stream.
 - Restore testing proves that revocation, invitation, and audit state are backed up consistently enough for the agreed RTO/RPO.
 - Security review occurs before exposing the no-email activation handoff to a pilot school.

@@ -49,4 +49,36 @@ describe('environment validation', () => {
       expect(String(error)).not.toContain('highly-sensitive');
     }
   });
+
+  it('normalizes an explicitly configured trusted web-origin allowlist', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IDENTITY_TRUSTED_WEB_ORIGINS: ' https://academico.example.test/,http://localhost:3001 ',
+      }).IDENTITY_TRUSTED_WEB_ORIGINS,
+    ).toEqual(['https://academico.example.test', 'http://localhost:3001']);
+  });
+
+  it('rejects malformed origins and insecure production cookie settings', () => {
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, IDENTITY_TRUSTED_WEB_ORIGINS: 'https://trusted.test/login' }),
+    ).toThrow('Invalid environment configuration: IDENTITY_TRUSTED_WEB_ORIGINS');
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        IDENTITY_TRUSTED_WEB_ORIGINS: 'https://academico.example.test',
+        IDENTITY_COOKIE_SECURE: 'false',
+      }),
+    ).toThrow('Invalid environment configuration: IDENTITY_COOKIE_SECURE');
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        IDENTITY_REFRESH_COOKIE_SAMESITE: 'none',
+        IDENTITY_COOKIE_SECURE: 'false',
+      }),
+    ).toThrow('Invalid environment configuration: IDENTITY_COOKIE_SECURE');
+  });
 });

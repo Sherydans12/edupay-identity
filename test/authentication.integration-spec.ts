@@ -35,6 +35,8 @@ interface Fixture {
 }
 
 describeWithDatabase('authentication core (PostgreSQL integration)', () => {
+  const trustedOrigin = 'https://academico.test';
+  const refreshCookieName = '__Host-edupay-refresh';
   let app: INestApplication;
   let directory: string;
   let privateKeyPem: string;
@@ -68,6 +70,9 @@ describeWithDatabase('authentication core (PostgreSQL integration)', () => {
       JWT_PRIVATE_KEY_PATH: privateKeyPath,
       JWT_PUBLIC_JWKS_PATH: jwksPath,
       JWKS_CACHE_MAX_AGE_SECONDS: '300',
+      IDENTITY_TRUSTED_WEB_ORIGINS: 'https://academico.test',
+      IDENTITY_COOKIE_SECURE: 'true',
+      IDENTITY_REFRESH_COOKIE_SAMESITE: 'lax',
       ARGON2_MEMORY_COST: '8192',
       ARGON2_TIME_COST: '2',
       ARGON2_PARALLELISM: '1',
@@ -158,6 +163,131 @@ describeWithDatabase('authentication core (PostgreSQL integration)', () => {
       tenantId: fixture.tenantB.id,
       roles: ['STUDENT'],
     });
+  });
+
+  it('keeps browser refresh tokens in a secure HttpOnly host-only cookie and rotates that cookie', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({
+        tenantHandle: fixture.tenantA.handle,
+        identifier: 'MATIAS.GONZALEZ',
+        password: fixture.password,
+      })
+      .expect(200);
+
+    expect(login.body).not.toHaveProperty('refreshToken');
+    const firstSetCookie = login.headers['set-cookie'];
+    expect(firstSetCookie).toHaveLength(1);
+    const firstCookie = firstSetCookie![0]!;
+    expect(firstCookie).toMatch(
+      new RegExp(`^${refreshCookieName}=[^;]+; Max-Age=\\d+; Path=/; Expires=[^;]+; HttpOnly; Secure; SameSite=Lax$`),
+    );
+    expect(firstCookie).not.toContain('Domain=');
+    const firstCookiePair = firstCookie.split(';', 1)[0]!;
+    const firstRefreshSecret = firstCookiePair.split('=', 2)[1]!;
+    const loginAudits = await prisma.authAuditEvent.findMany({ where: { sessionId: login.body.sessionId } });
+    expect(JSON.stringify(loginAudits)).not.toContain(firstRefreshSecret);
+
+    const refresh = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', trustedOrigin)
+      .set('Cookie', firstCookiePair)
+      .send({})
+      .expect(200);
+
+    expect(refresh.body).not.toHaveProperty('refreshToken');
+    const secondCookie = refresh.headers['set-cookie']![0]!;
+    expect(secondCookie).not.toBe(firstCookie);
+    expect(secondCookie).toContain(`${refreshCookieName}=`);
+    expect(JSON.stringify(login.body)).not.toContain(firstRefreshSecret);
+
+    const reuse = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', trustedOrigin)
+      .set('Cookie', firstCookiePair)
+      .send({})
+      .expect(401);
+    expect(reuse.body.error.code).toBe('REFRESH_REUSE_DETECTED');
+    expect(reuse.headers['set-cookie']![0]).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    expect(JSON.stringify(reuse.body)).not.toContain(firstRefreshSecret);
+
+    const session = await prisma.session.findUniqueOrThrow({ where: { id: login.body.sessionId } });
+    expect(session.revocationReason).toBe('REFRESH_TOKEN_REUSE');
+  });
+
+  it('rejects missing, malformed, and hostile browser refresh requests', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: fixture.password })
+      .expect(200);
+    const cookiePair = login.headers['set-cookie']![0]!.split(';', 1)[0]!;
+
+    const missing = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', trustedOrigin)
+      .send({})
+      .expect(401);
+    expect(missing.body.error.code).toBe('TOKEN_INVALID');
+
+    const malformed = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', trustedOrigin)
+      .set('Cookie', `${refreshCookieName}=malformed`)
+      .send({})
+      .expect(401);
+    expect(malformed.body.error.code).toBe('TOKEN_INVALID');
+    expect(JSON.stringify(malformed.body)).not.toContain('malformed');
+
+    const hostile = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', 'https://evil.test')
+      .set('Sec-Fetch-Site', 'cross-site')
+      .set('Cookie', cookiePair)
+      .send({})
+      .expect(403);
+    expect(hostile.body.error.code).toBe('ORIGIN_NOT_ALLOWED');
+
+    const missingOrigin = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookiePair)
+      .send({})
+      .expect(403);
+    expect(missingOrigin.body.error.code).toBe('ORIGIN_NOT_ALLOWED');
+
+    const hostileLogout = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', 'https://evil.test')
+      .set('Sec-Fetch-Site', 'cross-site')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .set('Cookie', cookiePair)
+      .expect(403);
+    expect(hostileLogout.body.error.code).toBe('ORIGIN_NOT_ALLOWED');
+  });
+
+  it('preserves generic login failures and does not establish browser cookies for untrusted origins', async () => {
+    const invalid = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: 'incorrect' })
+      .expect(401);
+    expect(invalid.body.error).toMatchObject({
+      code: 'AUTHENTICATION_FAILED',
+      message: 'The credentials could not be verified.',
+      details: [],
+    });
+    expect(invalid.headers['set-cookie']).toBeUndefined();
+
+    const untrusted = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', 'https://evil.test')
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: fixture.password })
+      .expect(403);
+    expect(untrusted.body.error.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(untrusted.body).not.toHaveProperty('accessToken');
+    expect(untrusted.body).not.toHaveProperty('refreshToken');
+    expect(untrusted.headers['set-cookie']).toBeUndefined();
   });
 
   it('uses generic failures for invalid passwords, disabled users, and inactive memberships', async () => {
@@ -325,6 +455,66 @@ describeWithDatabase('authentication core (PostgreSQL integration)', () => {
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${third.body.accessToken}`)
       .expect(401);
+  });
+
+  it('revokes and clears the current browser session on logout, including retries', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: fixture.password })
+      .expect(200);
+    const cookiePair = login.headers['set-cookie']![0]!.split(';', 1)[0]!;
+
+    const logout = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', trustedOrigin)
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .set('Cookie', cookiePair)
+      .expect(204);
+    expect(logout.headers['set-cookie']![0]).toContain(`${refreshCookieName}=;`);
+    expect(logout.headers['set-cookie']![0]).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+
+    const session = await prisma.session.findUniqueOrThrow({ where: { id: login.body.sessionId } });
+    expect(session.revocationReason).toBe('USER_LOGOUT');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', trustedOrigin)
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .set('Cookie', cookiePair)
+      .expect(204);
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', trustedOrigin)
+      .set('Cookie', cookiePair)
+      .send({})
+      .expect(401);
+  });
+
+  it('clears the current browser cookie when logout-all revokes all recent sessions', async () => {
+    const first = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: fixture.password })
+      .expect(200);
+    const second = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .set('Origin', trustedOrigin)
+      .send({ tenantHandle: fixture.tenantA.handle, identifier: 'matias.gonzalez', password: fixture.password })
+      .expect(200);
+    const cookiePair = second.headers['set-cookie']![0]!.split(';', 1)[0]!;
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout-all')
+      .set('Origin', trustedOrigin)
+      .set('Authorization', `Bearer ${second.body.accessToken}`)
+      .set('Cookie', cookiePair)
+      .expect(200);
+
+    expect(response.body.revokedSessions).toBe(2);
+    expect(response.headers['set-cookie']![0]).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: first.body.sessionId } })).revokedAt).not.toBeNull();
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: second.body.sessionId } })).revokedAt).not.toBeNull();
   });
 
   it('rejects malformed and expired access tokens with the token-specific safe envelope', async () => {

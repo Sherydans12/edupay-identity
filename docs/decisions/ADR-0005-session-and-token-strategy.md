@@ -11,7 +11,7 @@ Académico needs a verifiable request token, while Identity must retain revocati
 
 ## Decision
 
-Issue asymmetric signed access JWTs with a maximum 10-minute expiry and audience-specific claims, containing only the approved tenant context and minimum non-sensitive claims. Issue opaque refresh tokens stored only as hashes at rest, rotate them on every use, and revoke the entire family and session on reuse. Publish public keys through JWKS and support key rotation. Target a 30-day idle refresh/session lifetime and a 90-day absolute session lifetime. Use an `HttpOnly` + `Secure` refresh cookie for browser clients where topology permits and online session checks for high-risk actions.
+Issue asymmetric signed access JWTs with a maximum 10-minute expiry and audience-specific claims, containing only the approved tenant context and minimum non-sensitive claims. Issue opaque refresh tokens stored only as hashes at rest, rotate them on every use, and revoke the entire family and session on reuse. Publish public keys through JWKS and support key rotation. Target a 30-day idle refresh/session lifetime and a 90-day absolute session lifetime. Use the browser-safe topology in [ADR-0009](ADR-0009-browser-session-topology.md): an `HttpOnly` + `Secure` host-only refresh cookie, trusted-origin validation, and online session checks for high-risk actions. Access tokens remain in browser memory; browser JSON never contains the refresh token.
 
 ## Consequences
 

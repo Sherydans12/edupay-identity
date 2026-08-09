@@ -45,10 +45,11 @@ export class LoginDto {
 }
 
 export class RefreshDto {
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(1_024)
-  refreshToken!: string;
+  refreshToken?: string;
 }
 
 export class CurrentContextDto {

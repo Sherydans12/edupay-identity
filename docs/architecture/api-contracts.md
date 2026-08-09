@@ -16,6 +16,8 @@ The `tenantId` carried in an Identity tenant context is the canonical ecosystem 
 - Management endpoints require an active membership context or explicit system-admin support context.
 - High-risk management and academic-linking operations may require an online current-session or current-membership validation even when the access JWT is otherwise valid.
 - Mutation endpoints that create invitations, activation challenges, or sessions are idempotent where a client retry could duplicate state.
+- Credentialed browser CORS is available only for exact origins in `IDENTITY_TRUSTED_WEB_ORIGINS`; `Access-Control-Allow-Origin: *` is never combined with credentials.
+- Browser cookie-authenticated refresh/logout flows require a trusted `Origin`. CORS does not replace this CSRF/origin boundary. SameSite cookie protection and available Fetch Metadata are defense in depth.
 - Error responses use a stable envelope:
 
 ```json
@@ -30,6 +32,21 @@ The `tenantId` carried in an Identity tenant context is the canonical ecosystem 
 ```
 
 Messages are safe for users. Secret values, internal SQL details, account-existence clues, and cross-tenant data are excluded.
+
+## Browser client contract
+
+The intended frontend topology is:
+
+| Credential | Browser custody | Identity contract |
+| --- | --- | --- |
+| Access token | Frontend memory only | Use `Authorization: Bearer` for authenticated API calls; never persist it in browser storage. |
+| Refresh token | Identity `HttpOnly` cookie only | Use `credentials: 'include'` for Identity login, refresh, logout, and logout-all. JavaScript cannot read or serialize it. |
+
+The production cookie is host-only, `Secure`, `HttpOnly`, `Path=/`, and `SameSite=Lax` by
+default, with an expiry bounded by session policy. The secure deployment uses the `__Host-`
+prefix. A cross-site deployment must explicitly configure secure `SameSite=None`. Local HTTP
+development requires explicit trusted-origin and insecure-cookie configuration; it is never
+enabled by an implicit localhost allowlist.
 
 ## Authentication endpoints
 
@@ -48,19 +65,21 @@ Request:
 
 `tenantHandle` is optional when the identifier is globally unambiguous and is only a realm-selection hint. It is not placed into authorization context until Identity verifies the password and membership.
 
-Success returns an access token, refresh token/cookie, session ID, and selected membership context. If multiple active memberships remain after credential verification, return `MEMBERSHIP_SELECTION_REQUIRED` with a bounded list of safe tenant display values and opaque membership IDs.
+For a trusted browser `Origin`, the response sets the Identity-controlled `HttpOnly` refresh cookie and returns only the access-token/session response. The plaintext refresh token is omitted from browser JSON. A request without a browser `Origin` remains the non-browser JSON-token transport for API clients; it must not send the browser cookie. Browser clients include credentials and keep the access token in memory only.
+
+Success returns an access token, session ID, and selected membership context; the refresh credential is a cookie in browser mode or a JSON field in non-browser mode. If multiple active memberships remain after credential verification, return `MEMBERSHIP_SELECTION_REQUIRED` with a bounded list of safe tenant display values and opaque membership IDs.
 
 ### `POST /api/v1/auth/refresh`
 
-Consumes one refresh token and returns a new access token plus replacement refresh token. Reuse of an already-used token returns `REFRESH_REUSE_DETECTED`, revokes the family, and requires login.
+For browser sessions, consumes the refresh token from the Identity `HttpOnly` cookie, rotates it, sets the replacement cookie, and returns a new access token without a refresh token in JSON. Missing, malformed, missing-origin, or untrusted-origin browser-cookie requests are rejected. Reuse of an already-used token returns `REFRESH_REUSE_DETECTED`, revokes the family and session, clears the browser cookie, and requires login. Explicit non-browser clients may continue to send the refresh token in JSON from a request without a browser `Origin` or browser cookie.
 
 ### `POST /api/v1/auth/logout`
 
-Revokes the current session. The endpoint is safe to retry.
+Revokes the current session and clears the current browser refresh cookie. The endpoint is safe to retry. Browser requests must include an allowlisted `Origin` and the access token in the `Authorization` header.
 
 ### `POST /api/v1/auth/logout-all`
 
-Revokes all sessions for the authenticated user. Requires reauthentication or an approved recent-authentication policy for sensitive clients.
+Revokes all sessions for the authenticated user and clears the current browser refresh cookie. Requires reauthentication or an approved recent-authentication policy for sensitive clients.
 
 ### `GET /api/v1/auth/me`
 

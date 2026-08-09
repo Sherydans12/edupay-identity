@@ -17,7 +17,12 @@ import { PasswordHashService } from '../security/argon2.service.js';
 import { RateLimitPolicy } from '../security/rate-limit.policy.js';
 import type { LoginDto } from './auth.dto.js';
 import { IdentifierNormalizationService } from './identifier-normalization.service.js';
-import type { ActiveMembershipContext, AuthPrincipal, TokenResponse } from './auth.types.js';
+import type {
+  ActiveMembershipContext,
+  AuthPrincipal,
+  IssuedTokenResponse,
+  TokenResponse,
+} from './auth.types.js';
 
 const AUTHENTICATION_FAILED_MESSAGE = 'The credentials could not be verified.';
 const TOKEN_INVALID_MESSAGE = 'The refresh token is invalid or expired.';
@@ -38,7 +43,7 @@ interface SessionForToken {
 }
 
 type RotationOutcome =
-  | { kind: 'success'; session: SessionForToken; refreshToken: string }
+  | { kind: 'success'; session: SessionForToken; refreshToken: string; refreshExpiresAt: Date }
   | { kind: 'reuse' }
   | { kind: 'invalid' };
 
@@ -56,7 +61,7 @@ export class AuthService {
     private readonly config: ConfigService<Environment, true>,
   ) {}
 
-  async login(input: LoginDto, requestId: string, sourceAddress: string): Promise<TokenResponse> {
+  async login(input: LoginDto, requestId: string, sourceAddress: string): Promise<IssuedTokenResponse> {
     const isEmail = this.normalization.isEmail(input.identifier);
     const normalizedIdentifier = isEmail
       ? this.normalization.normalizeEmail(input.identifier)
@@ -171,8 +176,12 @@ export class AuthService {
     );
   }
 
-  async refresh(refreshToken: string, requestId: string, sourceAddress: string): Promise<TokenResponse> {
-    const parsed = this.opaqueTokens.parse(refreshToken, 'rft');
+  async refresh(
+    refreshToken: string | undefined,
+    requestId: string,
+    sourceAddress: string,
+  ): Promise<IssuedTokenResponse> {
+    const parsed = this.opaqueTokens.parse(refreshToken ?? '', 'rft');
     await this.assertRateLimit('refresh', [sourceAddress, parsed?.id ?? 'malformed']);
     if (!parsed) this.refreshInvalid();
 
@@ -272,6 +281,7 @@ export class AuthService {
           activeMembership: current.session.activeMembership,
         },
         refreshToken: replacementPlaintext,
+        refreshExpiresAt: idleExpiresAt,
       };
     });
 
@@ -283,7 +293,7 @@ export class AuthService {
       );
     }
     if (outcome.kind === 'invalid') this.refreshInvalid();
-    return this.buildTokenResponse(outcome.session, outcome.refreshToken);
+    return this.buildTokenResponse(outcome.session, outcome.refreshToken, outcome.refreshExpiresAt);
   }
 
   async logout(principal: AuthPrincipal, requestId: string): Promise<void> {
@@ -452,7 +462,7 @@ export class AuthService {
     activeMembership: MembershipRecord,
     deviceLabel: string | undefined,
     requestId: string,
-  ): Promise<TokenResponse> {
+  ): Promise<IssuedTokenResponse> {
     const refresh = await this.opaqueTokens.issue('rft');
     const plaintextRefresh = refresh.revealOnce();
     const now = new Date();
@@ -500,6 +510,7 @@ export class AuthService {
       return await this.buildTokenResponse(
         { id: session.id, userId, createdAt: session.createdAt, activeMembership },
         plaintextRefresh,
+        session.idleExpiresAt,
       );
     } catch (error) {
       const revokedAt = new Date();
@@ -515,16 +526,23 @@ export class AuthService {
     }
   }
 
-  private async buildTokenResponse(session: SessionForToken, refreshToken: string): Promise<TokenResponse> {
+  private async buildTokenResponse(
+    session: SessionForToken,
+    refreshToken: string,
+    refreshExpiresAt: Date,
+  ): Promise<IssuedTokenResponse> {
     return {
-      accessToken: await this.signAccessToken(session),
-      refreshToken,
-      tokenType: 'Bearer',
-      expiresIn: this.config.getOrThrow('JWT_ACCESS_TTL_SECONDS'),
-      sessionId: session.id,
-      activeMembership: session.activeMembership
-        ? this.toMembershipContext(session.activeMembership)
-        : null,
+      response: {
+        accessToken: await this.signAccessToken(session),
+        refreshToken,
+        tokenType: 'Bearer',
+        expiresIn: this.config.getOrThrow('JWT_ACCESS_TTL_SECONDS'),
+        sessionId: session.id,
+        activeMembership: session.activeMembership
+          ? this.toMembershipContext(session.activeMembership)
+          : null,
+      },
+      refreshExpiresAt,
     };
   }
 

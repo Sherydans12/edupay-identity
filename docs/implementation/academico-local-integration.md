@@ -17,3 +17,16 @@ Required smoke-check variables are `IDENTITY_BASE_URL`, `IDENTITY_ACCESS_TOKEN`,
 The repository integration scenario in `test/authentication.integration-spec.ts` is the executable fixture for this path. It generates an ephemeral Identity-only private key, publishes only its public JWK, obtains a real login token through the API, and validates that token as an external JWKS consumer would. This is a real asymmetric-token contract test, not a fake authentication mode.
 
 Académico must continue to apply its own academic resource policies after JWT validation. The Identity `roles` claim grants only tenant membership roles.
+
+## Browser integration
+
+Configure the local frontend origin explicitly in `IDENTITY_TRUSTED_WEB_ORIGINS`. For HTTP
+local development only, set `IDENTITY_COOKIE_SECURE=false`; production and HTTPS deployments
+must keep it `true`. Identity does not auto-allow localhost origins.
+
+The frontend keeps the access token in memory and never uses localStorage, sessionStorage,
+IndexedDB, or a JavaScript-readable persistent cookie. Login, refresh, logout, and logout-all
+requests to Identity use `credentials: 'include'`. Identity stores the browser refresh token
+in its own HttpOnly cookie, rotates it on refresh, and omits it from browser JSON. The frontend
+must send the access token in `Authorization: Bearer` for authenticated API calls and must
+not attempt to read or copy the refresh cookie.
