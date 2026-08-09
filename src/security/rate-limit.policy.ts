@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Environment } from '../config/environment.js';
 
 export interface RateLimitRequest {
-  bucket: 'login' | 'refresh' | 'activation' | 'recovery' | 'management';
+  bucket: 'login' | 'refresh' | 'activation' | 'recovery' | 'management' | 'internal';
   keys: ReadonlyArray<string>;
 }
 
@@ -54,6 +54,7 @@ export class ConfiguredRateLimitPolicy extends RateLimitPolicy {
       activation: config.getOrThrow('RATE_LIMIT_LOGIN_MAX'),
       recovery: config.getOrThrow('RATE_LIMIT_LOGIN_MAX'),
       management: config.getOrThrow('RATE_LIMIT_REFRESH_MAX'),
+      internal: config.getOrThrow('RATE_LIMIT_INTERNAL_MAX'),
     };
   }
 

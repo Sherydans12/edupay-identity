@@ -30,3 +30,31 @@ requests to Identity use `credentials: 'include'`. Identity stores the browser r
 in its own HttpOnly cookie, rotates it on refresh, and omits it from browser JSON. The frontend
 must send the access token in `Authorization: Bearer` for authenticated API calls and must
 not attempt to read or copy the refresh cookie.
+
+## Restricted backend verification
+
+Configure the same generated server-only value as `IDENTITY_ACADEMICO_SERVICE_TOKEN` in Identity
+and the protected Académico backend adapter secret. Generate at least 32 random bytes and encode
+them as base64url. Do not use an access JWT, browser cookie, `NEXT_PUBLIC` variable, committed env
+file, or human-created password as this credential.
+
+Académico calls:
+
+- `GET /internal/v1/sessions/{sessionId}/status` before the explicitly high-risk operations that
+  require fresh session/membership state;
+- `POST /internal/v1/identity-users/resolve` with the already validated JWT actor identifiers, one
+  exact target IdentityUser ID, and `STUDENT` or `TEACHER` before writing its academic link.
+
+Every request sends `Authorization: Bearer <server-held-service-token>` and `X-Request-Id`, uses
+HTTPS and/or a private trusted network, and remains backend-only. Identity independently revalidates
+the human actor for link verification; the service credential alone grants no membership mutation.
+
+Linking a target in `PENDING_ACTIVATION` is expected: Académico may save the Student/Teacher link,
+then the user completes Identity activation and signs in normally. The pending state grants no
+application access.
+
+For rotation, deploy Identity with a new current token, the old value in
+`IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS`, and an ISO-8601
+`IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT` no more than 24 hours ahead. Update every
+Académico instance, verify calls with the new value, then remove the previous value and expiry
+before the deadline. Never place either value in logs or tickets.

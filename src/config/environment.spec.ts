@@ -81,4 +81,47 @@ describe('environment validation', () => {
       }),
     ).toThrow('Invalid environment configuration: IDENTITY_COOKIE_SECURE');
   });
+
+  it('requires a high-entropy Academic service token in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        IDENTITY_TRUSTED_WEB_ORIGINS: 'https://academico.example.test',
+      }),
+    ).toThrow('IDENTITY_ACADEMICO_SERVICE_TOKEN');
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN: 'too-short',
+      }),
+    ).toThrow('IDENTITY_ACADEMICO_SERVICE_TOKEN');
+  });
+
+  it('requires a distinct previous service token with a bounded rotation expiry', () => {
+    const current = 'A'.repeat(43);
+    const previous = 'B'.repeat(43);
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN: current,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS: previous,
+      }),
+    ).toThrow('IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT');
+
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN: current,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS: previous,
+        IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT: new Date(
+          Date.now() + 60 * 60 * 1_000,
+        ).toISOString(),
+      }),
+    ).toMatchObject({
+      IDENTITY_ACADEMICO_SERVICE_TOKEN: current,
+      IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS: previous,
+    });
+  });
 });

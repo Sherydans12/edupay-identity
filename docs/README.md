@@ -30,6 +30,7 @@ Implementation notes that do not replace the accepted baseline:
 - `SYSTEM_ADMIN` does not automatically become a tenant member. Tenant support requires an explicit elevated support context, reason, and audit record. User impersonation is out of scope for MVP.
 - Access JWTs are asymmetric-signed and expire within 10 minutes. Refresh tokens are opaque, rotated, hashed at rest, and family-revoking on reuse; browser refresh tokens use `HttpOnly` and `Secure` cookies where topology permits.
 - The existing EduPay administrative authentication remains untouched initially. No migration, federation, or login redesign is part of this repository’s MVP.
+- Restricted Académico verification uses a server-only service credential plus current Identity database reauthorization for human-sensitive link actions; it is not a directory or delegated mutation API.
 
 ## Relationship to EduPay Académico
 

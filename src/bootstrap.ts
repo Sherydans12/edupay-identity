@@ -32,7 +32,11 @@ export function configureApplication(app: INestApplication): void {
     optionsSuccessStatus: 204,
   });
   app.setGlobalPrefix('api', {
-    exclude: [{ path: '.well-known/jwks.json', method: RequestMethod.GET }],
+    exclude: [
+      { path: '.well-known/jwks.json', method: RequestMethod.GET },
+      { path: 'internal/v1/sessions/:sessionId/status', method: RequestMethod.GET },
+      { path: 'internal/v1/identity-users/resolve', method: RequestMethod.POST },
+    ],
   });
   app.enableVersioning({
     type: VersioningType.URI,

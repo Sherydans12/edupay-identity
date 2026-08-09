@@ -166,13 +166,81 @@ Operational health only; must not disclose tenant/user data.
 
 ### `POST /internal/v1/identity-users/resolve`
 
-Restricted service-to-service endpoint for deliberate academic linking. Request may contain an exact normalized identifier and the canonical tenant context. Response is minimal: `userId`, safe verification status, and matching reason. It must not support unbounded directory search or return credentials, tokens, or unnecessary profile data.
+Restricted service-to-service endpoint for deliberate academic linking. It requires the
+EduPay Académico service bearer credential; a human access JWT cannot substitute for it.
+The service credential authenticates the workload but does not authorize the human action.
+Identity revalidates the actor from current Identity state.
+
+Request:
+
+```json
+{
+  "actor": {
+    "identityUserId": "0f6f7d46-78d7-4cd7-851d-18530424eeb1",
+    "sessionId": "1bb50d97-13ef-4940-b671-724a69246c7f",
+    "membershipId": "2492b370-dd18-465f-a06a-c5a9598cf481",
+    "tenantId": "e5108766-f8e9-4778-9833-92d7d9ca3194"
+  },
+  "targetIdentityUserId": "75fb03af-06d8-424a-98d6-f36b8629638a",
+  "expectedRole": "STUDENT"
+}
+```
+
+Identity requires the actor user, session, selected membership, and tenant realm to be current
+and active, and reads the actor's current `TENANT_ADMIN` role from the selected membership.
+Caller-supplied role strings and platform `SYSTEM_ADMIN` assignments do not grant this action.
+
+The target must be the exact requested active IdentityUser with a membership in the actor's exact
+tenant. The membership must be `PENDING_ACTIVATION` or `ACTIVE` and contain the requested
+`STUDENT` or `TEACHER` role. Successful response:
+
+```json
+{
+  "verified": true,
+  "identityUserId": "75fb03af-06d8-424a-98d6-f36b8629638a",
+  "membershipId": "87a170d8-c44c-41ae-82a9-d64ff63e147c",
+  "tenantId": "e5108766-f8e9-4778-9833-92d7d9ca3194",
+  "membershipStatus": "PENDING_ACTIVATION",
+  "roles": ["STUDENT"]
+}
+```
+
+The endpoint accepts no directory listing, fuzzy search, email/username lookup, or mutation and
+returns no profile, credential, login identifier, or token data. Target verification failures use
+the same non-enumerating `404 IDENTITY_LINK_NOT_VERIFIED` response.
 
 The Academic API owns the link mutation on its `Student`/`Teacher` record. Identity may record the service actor and return a link-verification audit event, but does not create or own the academic link.
 
+A `PENDING_ACTIVATION` result permits the academic link to be saved immediately after provisioning.
+It does not activate the membership or grant login/application access.
+
 ### `GET /internal/v1/sessions/{sessionId}/status`
 
-Restricted status check for high-risk consumers. Returns active/revoked state, current user, and current membership context. It is not a substitute for normal JWT validation.
+Restricted status check for high-risk consumers. It requires the Académico service bearer
+credential and derives all state from the path session ID and Identity's database. No caller user,
+tenant, or membership value can manufacture context.
+
+```json
+{
+  "active": true,
+  "identityUserId": "0f6f7d46-78d7-4cd7-851d-18530424eeb1",
+  "membershipActive": true,
+  "membershipId": "2492b370-dd18-465f-a06a-c5a9598cf481",
+  "sessionActive": true,
+  "sessionId": "1bb50d97-13ef-4940-b671-724a69246c7f",
+  "tenantId": "e5108766-f8e9-4778-9833-92d7d9ca3194"
+}
+```
+
+Session activity includes revocation, idle expiry, absolute expiry, and active user status.
+Membership activity includes session ownership, `ACTIVE` membership status, and an `ACTIVE`
+tenant realm. Unknown or structurally unusable session IDs return the safe `404 NOT_FOUND`
+envelope. The response contains no access/refresh token, credential, login identifier, or PII.
+This online check complements and does not replace normal JWT validation by Académico.
+
+Both internal routes require `X-Request-Id` correlation (generated when absent), reject browser
+`Origin` requests, enforce bounded bodies/queries and dedicated throttling, and are excluded from
+the browser-oriented public OpenAPI surface.
 
 ## Events and outbox contract
 

@@ -9,6 +9,7 @@ import { JwtModule } from './jwt/jwt.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { SecurityModule } from './security/security.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { InternalAcademicModule } from './internal-academic/internal-academic.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AuthModule } from './auth/auth.module.js';
     SecurityModule,
     JwtModule,
     AuthModule,
+    InternalAcademicModule,
     HealthModule,
   ],
   providers: [GlobalExceptionFilter, RequestIdMiddleware],

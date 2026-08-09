@@ -1,6 +1,27 @@
 import { z } from 'zod';
 
 const integerFromEnvironment = z.coerce.number().int().positive();
+const serviceTokenFromEnvironment = z
+  .string()
+  .default('')
+  .superRefine((value, context) => {
+    if (value === '') return;
+    if (value.length < 43 || value.length > 128 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'must be a base64url-encoded secret containing at least 32 random bytes',
+      });
+    }
+  });
+
+const optionalTimestampFromEnvironment = z
+  .string()
+  .default('')
+  .superRefine((value, context) => {
+    if (value !== '' && Number.isNaN(Date.parse(value))) {
+      context.addIssue({ code: 'custom', message: 'must be an ISO-8601 timestamp' });
+    }
+  });
 
 const trustedWebOriginsFromEnvironment = z.string().default('').transform((value, context) => {
   const origins = value
@@ -65,6 +86,10 @@ export const environmentSchema = z
     RATE_LIMIT_WINDOW_SECONDS: integerFromEnvironment.max(3_600).default(900),
     RATE_LIMIT_LOGIN_MAX: integerFromEnvironment.max(1_000).default(10),
     RATE_LIMIT_REFRESH_MAX: integerFromEnvironment.max(10_000).default(60),
+    RATE_LIMIT_INTERNAL_MAX: integerFromEnvironment.max(100_000).default(5_000),
+    IDENTITY_ACADEMICO_SERVICE_TOKEN: serviceTokenFromEnvironment,
+    IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS: serviceTokenFromEnvironment,
+    IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT: optionalTimestampFromEnvironment,
     RESEND_API_KEY: z.string().optional().default(''),
     IDENTITY_EMAIL_FROM: z.string().min(3).default('EduPay Identity <no-reply@identity.invalid>'),
     IDENTITY_PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
@@ -100,6 +125,47 @@ export const environmentSchema = z
         code: 'custom',
         path: ['IDENTITY_TRUSTED_WEB_ORIGINS'],
         message: 'must contain at least one trusted origin in production',
+      });
+    }
+    if (environment.NODE_ENV === 'production' && environment.IDENTITY_ACADEMICO_SERVICE_TOKEN === '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['IDENTITY_ACADEMICO_SERVICE_TOKEN'],
+        message: 'is required in production',
+      });
+    }
+
+    const previousToken = environment.IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS;
+    const previousExpiresAt = environment.IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT;
+    if (previousToken !== '') {
+      if (environment.IDENTITY_ACADEMICO_SERVICE_TOKEN === '' || previousToken === environment.IDENTITY_ACADEMICO_SERVICE_TOKEN) {
+        context.addIssue({
+          code: 'custom',
+          path: ['IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS'],
+          message: 'must differ from the configured current token',
+        });
+      }
+      if (previousExpiresAt === '') {
+        context.addIssue({
+          code: 'custom',
+          path: ['IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT'],
+          message: 'is required while a previous token is configured',
+        });
+      } else {
+        const overlapMilliseconds = Date.parse(previousExpiresAt) - Date.now();
+        if (overlapMilliseconds <= 0 || overlapMilliseconds > 86_400_000) {
+          context.addIssue({
+            code: 'custom',
+            path: ['IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT'],
+            message: 'must bound rotation overlap to the next 24 hours',
+          });
+        }
+      }
+    } else if (previousExpiresAt !== '') {
+      context.addIssue({
+        code: 'custom',
+        path: ['IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT'],
+        message: 'must be empty when no previous token is configured',
       });
     }
   });

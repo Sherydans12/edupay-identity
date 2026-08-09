@@ -305,6 +305,20 @@ Identity owns authentication, membership, role assignment, session state, invita
 5. Académico uses `sub` to match an optional academic record link; absence of a link is not a reason for Identity to create a record.
 6. Académico audits academic actions; Identity audits authentication and membership actions. Events may share `sid` and correlation IDs without duplicating ownership.
 
+### Restricted online verification
+
+The MVP backend integration uses the service-only routes in
+[ADR-0010](../decisions/ADR-0010-academico-restricted-service-auth.md). Académico authenticates
+as a workload with a server-held high-entropy bearer credential over HTTPS and/or a private trusted
+network. That credential cannot replace human authorization: exact academic link verification
+re-reads the actor's current user, session, selected membership, tenant, and `TENANT_ADMIN` role
+from Identity's database. Session status derives all returned context from the requested session.
+
+The surface is deliberately not an Identity directory or delegated mutation API. It accepts one
+exact IdentityUser target and one expected Student/Teacher role, returns minimal membership proof,
+and supports `PENDING_ACTIVATION` only so Académico may persist its independently owned link before
+activation. Actual authentication remains blocked until normal Identity activation succeeds.
+
 The existing EduPay administrative login is a separate trust domain. Identity does not validate its cookies, import its passwords, or provide a migration bridge in the initial implementation. Any future federation or migration requires a new accepted ADR.
 
 ## 7. Identity security baseline
@@ -320,6 +334,7 @@ The existing EduPay administrative login is a separate trust domain. Identity do
 - Keep Identity and Academic databases separate. Académico never reads Identity tables directly.
 - Make provider outage behavior visible and recoverable: invitation creation must not be lost if Resend is unavailable, and resend delivery is retried from an outbox.
 - For browser sessions, require an explicit trusted web-origin allowlist, reflect only allowlisted origins in credentialed CORS, reject cookie-authenticated requests with missing/untrusted origins, and clear the refresh cookie on logout, logout-all, invalid refresh, and reuse detection.
+- Keep internal verification routes outside browser use, authenticate only the Académico workload credential with constant-time comparison, bound rotation overlap, requests, queries, and throttling, and reauthorize human-sensitive link operations from current Identity state.
 
 See the [threat model](../security/threat-model.md) for threats, mitigations, and required evidence.
 
@@ -344,7 +359,7 @@ See the [threat model](../security/threat-model.md) for threats, mitigations, an
 - Automatic identity linking based only on matching names or unverified email.
 - Impersonation without a separate support/security decision.
 
-All nine Identity architecture decisions are accepted by owner approval and are recorded in the [ADR index](../decisions/README.md). They are no longer unresolved prerequisites for implementation bootstrap.
+All ten Identity architecture decisions are accepted by owner approval and are recorded in the [ADR index](../decisions/README.md). They are no longer unresolved prerequisites for implementation bootstrap.
 
 The following operational or implementation choices remain unresolved and must not be silently invented:
 

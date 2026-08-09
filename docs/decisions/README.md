@@ -3,7 +3,7 @@
 Status: accepted decisions; authoritative within the documented scope
 Accepted: 2026-08-08
 
-These ADRs turn the Identity architecture into explicit contracts. All nine records below have explicit owner approval and are authoritative for implementation. Operational tunables and unrelated follow-up decisions remain in the architecture document’s remaining-unresolved section.
+These ADRs turn the Identity architecture into explicit contracts. All ten records below have explicit owner approval and are authoritative for implementation. Operational tunables and unrelated follow-up decisions remain in the architecture document’s remaining-unresolved section.
 
 | ADR | Decision | Status |
 | --- | --- | --- |
@@ -16,3 +16,4 @@ These ADRs turn the Identity architecture into explicit contracts. All nine reco
 | [0007](ADR-0007-identity-api-and-events.md) | Versioned API, JWKS, and durable events | Accepted (2026-08-08) |
 | [0008](ADR-0008-existing-admin-coexistence.md) | Leave existing EduPay admin auth untouched | Accepted (2026-08-08) |
 | [0009](ADR-0009-browser-session-topology.md) | Browser-safe refresh-cookie and origin topology | Accepted (2026-08-09) |
+| [0010](ADR-0010-academico-restricted-service-auth.md) | Restricted Académico service authentication and verification | Accepted (2026-08-09) |

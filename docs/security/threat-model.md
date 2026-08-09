@@ -24,6 +24,7 @@ Accepted: 2026-08-08
 4. Identity to EduPay Académico through JWT, JWKS, APIs, and events.
 5. Identity management caller to membership administration.
 6. Identity to the existing EduPay administrative login, which remains a separate trust domain.
+7. EduPay Académico backend to Identity's restricted internal verification routes.
 
 ## Threats and mitigations
 
@@ -42,6 +43,8 @@ Accepted: 2026-08-08
 | User/tenant enumeration | Privacy leakage and targeted abuse | Generic login/recovery/invite responses, bounded membership results, consistent timing/error behavior | Enumeration test matrix |
 | Ambiguous username/email matching | Wrong-account login or privacy leak | Explicit identifier kinds, normalization, tenant realm scoping, ambiguity rejection, verified-email policy | Collision fixture tests |
 | Unauthorized academic linking | Wrong person gains academic access | Académico owns link, explicit service contract, exact matching/verification, deliberate admin action, audit, no name-only matching | Link conflict/authorization tests |
+| Stolen or misused Académico service credential | Unauthorized internal verification or identity enumeration | 256-bit-or-greater server-only secret, constant-time comparison, HTTPS/private network, bounded overlap rotation, no browser use, no mutation authority, throttling and safe audit | Current/previous/wrong/JWT/browser service-auth tests and rotation exercise |
+| Forged or stale propagated link actor | Cross-tenant or unauthorized academic link | Re-read actor user/session/active membership/tenant/current `TENANT_ADMIN` role from Identity DB; no caller roles, implicit `SYSTEM_ADMIN`, or impersonation | Actor revocation, inactive membership, non-admin, system-admin, and cross-tenant tests |
 | Over-privileged system-admin support | Broad data exposure | No implicit tenant context, explicit elevation/reason, step-up auth, scoped support session, audit, no silent impersonation | Support-path review |
 | CSRF/XSS/open redirect | Token theft or unwanted mutations | SameSite cookies, exact trusted-origin checks independent of CORS, Fetch Metadata defense in depth, output encoding, allowlisted redirects, secure headers, input validation | Browser origin/CORS and cookie tests |
 | Resend/provider outage | Activation cannot complete or state is lost | Durable invitation/outbox state, retries, idempotency, visible delivery status, manual resend | Provider-failure integration tests |
@@ -57,5 +60,7 @@ Accepted: 2026-08-08
 - Authentication failures, refresh reuse, activation guessing, role changes, session revocations, and support elevations are observable without logging secrets.
 - Browser JSON responses, errors, audit metadata, and application logs must not contain refresh-cookie values; `Set-Cookie` headers are treated as secret-bearing output and are not logged.
 - Identity and Académico correlate events through request/correlation IDs and `sid`, but each service owns its audit stream.
+- Internal service credentials remain only in server-side managed secret custody. Rotation uses an explicitly expiring previous-token overlap no longer than 24 hours; token values never enter logs, errors, audit metadata, documentation, or browsers.
+- Production internal traffic uses HTTPS and/or a private trusted network. Gateways retain the internal routes as backend-only, preserve correlation IDs, enforce bounded bodies, and do not publish them through browser routing.
 - Restore testing proves that revocation, invitation, and audit state are backed up consistently enough for the agreed RTO/RPO.
 - Security review occurs before exposing the no-email activation handoff to a pilot school.

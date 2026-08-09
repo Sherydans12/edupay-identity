@@ -20,6 +20,7 @@ describe('authentication domain rules', () => {
       RATE_LIMIT_WINDOW_SECONDS: 900,
       RATE_LIMIT_LOGIN_MAX: 2,
       RATE_LIMIT_REFRESH_MAX: 3,
+      RATE_LIMIT_INTERNAL_MAX: 100,
     } as Environment);
     const policy = new ConfiguredRateLimitPolicy(config);
 
@@ -40,6 +41,7 @@ describe('authentication domain rules', () => {
       RATE_LIMIT_WINDOW_SECONDS: 900,
       RATE_LIMIT_LOGIN_MAX: 2,
       RATE_LIMIT_REFRESH_MAX: 3,
+      RATE_LIMIT_INTERNAL_MAX: 100,
     } as Environment);
     const policy = new ConfiguredRateLimitPolicy(config);
     await expect(policy.consume({ bucket: 'login', keys: [] })).resolves.toMatchObject({
