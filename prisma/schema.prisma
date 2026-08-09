@@ -220,6 +220,7 @@ model Invitation {
   id           String           @id @db.Uuid
   membershipId String           @db.Uuid
   tokenHash    String
+  intendedEmail String?
   expiresAt    DateTime         @db.Timestamptz(3)
   acceptedAt   DateTime?        @db.Timestamptz(3)
   revokedAt    DateTime?        @db.Timestamptz(3)
@@ -288,8 +289,12 @@ model OutboxEvent {
   payload       Json
   status        OutboxStatus @default(PENDING)
   attemptCount  Int          @default(0)
+  maxAttempts   Int          @default(5)
   availableAt   DateTime     @default(now()) @db.Timestamptz(3)
   publishedAt   DateTime?    @db.Timestamptz(3)
+  deliveryKey   String?      @unique
+  providerResponseId String?
+  lastError     String?
   createdAt     DateTime     @default(now()) @db.Timestamptz(3)
 
   @@index([status, availableAt], map: "outbox_events_status_available_idx")

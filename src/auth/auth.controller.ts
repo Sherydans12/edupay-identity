@@ -3,14 +3,26 @@ import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/c
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from './access-token.guard.js';
 import { AuthService } from './auth.service.js';
-import { CurrentContextDto, LoginDto, RefreshDto } from './auth.dto.js';
+import {
+  ActivationChallengeCompleteDto,
+  CurrentContextDto,
+  InvitationAcceptDto,
+  LoginDto,
+  PasswordRecoveryConfirmDto,
+  PasswordRecoveryRequestDto,
+  RefreshDto,
+} from './auth.dto.js';
+import { AccountLifecycleService } from './account-lifecycle.service.js';
 import type { AuthenticatedRequest } from './auth.types.js';
 import { LogoutTokenGuard } from './logout-token.guard.js';
 
 @ApiTags('authentication')
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly lifecycle: AccountLifecycleService,
+  ) {}
 
   @Post('login')
   @HttpCode(200)
@@ -64,6 +76,43 @@ export class AuthController {
   ): Promise<unknown> {
     return this.auth.switchContext(request.auth, input.membershipId, request.requestId);
   }
+
+  @Post('invitations/accept')
+  @HttpCode(200)
+  acceptInvitation(
+    @Body() input: InvitationAcceptDto,
+    @Req() request: Request,
+  ): Promise<Record<string, unknown>> {
+    return this.lifecycle.acceptInvitation(input, request.requestId);
+  }
+
+  @Post('activations/complete')
+  @HttpCode(200)
+  completeActivation(
+    @Body() input: ActivationChallengeCompleteDto,
+    @Req() request: Request,
+  ): Promise<Record<string, unknown>> {
+    return this.lifecycle.completeActivation(input, request.requestId, this.sourceAddress(request));
+  }
+
+  @Post('password-recovery/request')
+  @HttpCode(202)
+  requestPasswordRecovery(
+    @Body() input: PasswordRecoveryRequestDto,
+    @Req() request: Request,
+  ): Promise<{ accepted: true }> {
+    return this.lifecycle.requestPasswordRecovery(input, request.requestId, this.sourceAddress(request));
+  }
+
+  @Post('password-recovery/confirm')
+  @HttpCode(200)
+  confirmPasswordRecovery(
+    @Body() input: PasswordRecoveryConfirmDto,
+    @Req() request: Request,
+  ): Promise<Record<string, unknown>> {
+    return this.lifecycle.confirmPasswordRecovery(input, request.requestId, this.sourceAddress(request));
+  }
+
 
   private sourceAddress(request: Request): string {
     return request.ip || request.socket.remoteAddress || 'unknown';

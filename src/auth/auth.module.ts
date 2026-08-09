@@ -5,10 +5,21 @@ import { AuthService } from './auth.service.js';
 import { IdentifierNormalizationService } from './identifier-normalization.service.js';
 import { JwtModule } from '../jwt/jwt.module.js';
 import { LogoutTokenGuard } from './logout-token.guard.js';
+import { AccountLifecycleService } from './account-lifecycle.service.js';
+import { MembershipController } from './membership.controller.js';
+import { PasswordPolicyService } from './password-policy.service.js';
+import { EmailModule } from '../email/email.module.js';
 
 @Module({
-  imports: [JwtModule],
-  controllers: [AuthController],
-  providers: [AuthService, AccessTokenGuard, LogoutTokenGuard, IdentifierNormalizationService],
+  imports: [JwtModule, EmailModule],
+  controllers: [AuthController, MembershipController],
+  providers: [
+    AuthService,
+    AccountLifecycleService,
+    PasswordPolicyService,
+    AccessTokenGuard,
+    LogoutTokenGuard,
+    IdentifierNormalizationService,
+  ],
 })
 export class AuthModule {}

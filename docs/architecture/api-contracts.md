@@ -168,6 +168,12 @@ Identity may publish versioned events after durable state changes:
 - `identity.session.revoked.v1`
 - `identity.invitation.created.v1`
 
+Identity email delivery uses the same durable `OutboxEvent` foundation with the internal event types
+`identity.email.invitation.v1` and `identity.email.password-recovery.v1`. Email rows carry a unique
+delivery key, bounded attempt count, provider response ID, sanitized last error, and pending/published/
+failed state. The message body is protected in the outbox payload and is delivered only by the Identity
+Resend adapter; invitation and reset domain records retain only one-time secret hashes.
+
 Events are integration signals, not authorization proof. Consumers validate the issuer, event ID, schema version, timestamp, and replay/idempotency key, and recheck current membership before sensitive action.
 
 ## Contract examples and status codes

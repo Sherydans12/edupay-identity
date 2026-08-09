@@ -2,7 +2,7 @@
 
 EduPay Identity is the independent authentication and tenant-membership service for the EduPay ecosystem. This repository deliberately contains no academic records or academic resource-authorization policies.
 
-The current phase provides the backend-first NestJS authentication core: password login, short-lived access tokens, rotated opaque refresh tokens, session logout/revocation, authenticated user and membership reads, and membership-derived tenant-context switching. It does not include academic records or an administration frontend.
+The current phase provides the backend-first NestJS authentication core plus safe account lifecycle operations: password login, short-lived access tokens, rotated opaque refresh tokens, session logout/revocation, authenticated user and membership reads, membership-derived tenant-context switching, tenant-admin provisioning and membership management, email invitations, no-email activation challenges, password recovery, durable Identity email delivery intents, and security audit/event evidence. It does not include academic records or an administration frontend.
 
 ## Requirements
 
@@ -17,6 +17,8 @@ The current phase provides the backend-first NestJS authentication core: passwor
 3. For disposable development-only signing material, run `pnpm keys:generate:dev`. The command writes into the ignored `runtime/keys` directory and never prints private key material.
 4. Run `pnpm prisma:migrate:deploy` against an Identity-owned PostgreSQL 15 database.
 5. Run `pnpm dev`.
+
+The email delivery worker is independently runnable after `pnpm build` with `pnpm email:deliver`. It claims pending Identity email intents, delivers through Resend with an idempotency key, and records bounded retry or terminal-failure state. Membership changes are committed independently of provider delivery.
 
 Production private signing keys must be supplied through external managed key/secret custody. They must never be committed. The public JWKS is loaded separately, checked for private JWK members, and exposed at `/.well-known/jwks.json`.
 

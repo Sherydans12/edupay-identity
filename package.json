@@ -18,6 +18,7 @@
     "build": "pnpm prisma:generate && nest build",
     "dev": "pnpm prisma:generate && nest start --watch",
     "start": "node dist/main.js",
+    "email:deliver": "node dist/email/worker-main.js",
     "lint": "eslint src test prisma.config.ts vitest.config.ts",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "test": "pnpm prisma:generate && vitest run",

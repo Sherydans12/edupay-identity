@@ -35,6 +35,17 @@ export const environmentSchema = z
     RATE_LIMIT_WINDOW_SECONDS: integerFromEnvironment.max(3_600).default(900),
     RATE_LIMIT_LOGIN_MAX: integerFromEnvironment.max(1_000).default(10),
     RATE_LIMIT_REFRESH_MAX: integerFromEnvironment.max(10_000).default(60),
+    RESEND_API_KEY: z.string().optional().default(''),
+    IDENTITY_EMAIL_FROM: z.string().min(3).default('EduPay Identity <no-reply@identity.invalid>'),
+    IDENTITY_PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
+    IDENTITY_EMAIL_INVITATION_TTL_SECONDS: integerFromEnvironment.max(604_800).default(86_400),
+    IDENTITY_ACTIVATION_TTL_SECONDS: integerFromEnvironment.max(86_400).default(3_600),
+    IDENTITY_PASSWORD_RESET_TTL_SECONDS: integerFromEnvironment.max(86_400).default(3_600),
+    ACTIVATION_ATTEMPT_LIMIT: integerFromEnvironment.max(100).default(10),
+    PASSWORD_MIN_LENGTH: integerFromEnvironment.min(8).max(256).default(12),
+    OUTBOX_MAX_ATTEMPTS: integerFromEnvironment.max(20).default(5),
+    OUTBOX_BASE_BACKOFF_SECONDS: integerFromEnvironment.max(3_600).default(30),
+    IDENTITY_OUTBOX_ENCRYPTION_KEY: z.string().optional(),
   });
 
 export type Environment = z.infer<typeof environmentSchema>;
