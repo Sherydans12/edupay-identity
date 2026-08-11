@@ -9,6 +9,7 @@ import { JwtModule } from './jwt/jwt.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { SecurityModule } from './security/security.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { EmailModule } from './email/email.module.js';
 import { InternalAcademicModule } from './internal-academic/internal-academic.module.js';
 
 @Module({
@@ -22,6 +23,7 @@ import { InternalAcademicModule } from './internal-academic/internal-academic.mo
     SecurityModule,
     JwtModule,
     AuthModule,
+    EmailModule,
     InternalAcademicModule,
     HealthModule,
   ],
