@@ -20,6 +20,8 @@ The current phase provides the backend-first NestJS authentication core plus saf
 
 The email delivery worker is independently runnable after `pnpm build` with `pnpm email:deliver`. It claims pending Identity email intents, delivers through Resend with an idempotency key, and records bounded retry or terminal-failure state. Membership changes are committed independently of provider delivery.
 
+The first production `TenantRealm` and `TENANT_ADMIN` are created only through the operator-local `pnpm bootstrap:tenant-admin` command. It requires an explicit canonical tenant UUID, Identity tenant handle, institutional username, and code or email activation. It never accepts or creates a permanent password, and compatible reruns never reveal a prior activation secret. Follow the coordinated Identity/Académico procedure in [docs/implementation/production-tenant-bootstrap.md](docs/implementation/production-tenant-bootstrap.md).
+
 Production private signing keys must be supplied through external managed key/secret custody. They must never be committed. The public JWKS is loaded separately, checked for private JWK members, and exposed at `/.well-known/jwks.json`.
 
 ## Validation

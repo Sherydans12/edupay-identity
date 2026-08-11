@@ -16,6 +16,7 @@ EduPay Identity is an independent centralized identity service for EduPay ecosys
 Implementation notes that do not replace the accepted baseline:
 
 - [Application bootstrap](implementation/bootstrap.md)
+- [Production tenant-admin bootstrap](implementation/production-tenant-bootstrap.md)
 
 ## Governing constraints
 

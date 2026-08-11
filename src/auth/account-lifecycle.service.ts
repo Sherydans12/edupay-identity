@@ -13,6 +13,10 @@ import {
 } from '../generated/prisma/enums.js';
 import type { Environment } from '../config/environment.js';
 import { SafeHttpException } from '../common/safe-http.exception.js';
+import {
+  createInvitationEmail,
+  createPasswordRecoveryEmail,
+} from '../email/account-lifecycle-email.js';
 import { EmailOutboxService } from '../email/email-outbox.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import { AuditService } from '../security/audit.service.js';
@@ -410,7 +414,7 @@ export class AccountLifecycleService {
         deliveryKey: `invitation:${invitation.id}`,
         eventType: 'identity.email.invitation.v1',
         aggregateId: invitation.id,
-        message: this.invitationEmail(emailIdentifier.normalizedValue, plaintext),
+        message: createInvitationEmail(this.config, emailIdentifier.normalizedValue, plaintext),
       });
       await this.createOutboxEvent(transaction, 'identity.invitation.created.v1', invitation.id, {
         invitationId: invitation.id,
@@ -774,7 +778,7 @@ export class AccountLifecycleService {
           deliveryKey: `password-reset:${reset.id}`,
           eventType: 'identity.email.password-recovery.v1',
           aggregateId: reset.id,
-          message: this.recoveryEmail(eligible.email, plaintext),
+          message: createPasswordRecoveryEmail(this.config, eligible.email, plaintext),
         });
         await transaction.authAuditEvent.create({
           data: {
@@ -1039,28 +1043,6 @@ export class AccountLifecycleService {
       roles: this.roleCodes(membership),
       activatedAt: membership.activatedAt?.toISOString() ?? null,
       ...(username ? { institutionalUsername: username } : {}),
-    };
-  }
-
-  private invitationEmail(to: string, token: string) {
-    const link = `${this.config.getOrThrow('IDENTITY_PUBLIC_BASE_URL').replace(/\/$/, '')}/activate?token=${encodeURIComponent(token)}`;
-    return {
-      to,
-      from: this.config.getOrThrow('IDENTITY_EMAIL_FROM'),
-      subject: 'Activate your EduPay Identity account',
-      text: `Use this link to activate your EduPay Identity account: ${link}\nThis link expires soon and can be used once.`,
-      html: `<p>Activate your EduPay Identity account:</p><p><a href="${link}">Continue activation</a></p><p>This link expires soon and can be used once.</p>`,
-    };
-  }
-
-  private recoveryEmail(to: string, token: string) {
-    const link = `${this.config.getOrThrow('IDENTITY_PUBLIC_BASE_URL').replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
-    return {
-      to,
-      from: this.config.getOrThrow('IDENTITY_EMAIL_FROM'),
-      subject: 'Reset your EduPay Identity password',
-      text: `Use this link to reset your EduPay Identity password: ${link}\nThis link expires soon and can be used once.`,
-      html: `<p>Reset your EduPay Identity password:</p><p><a href="${link}">Continue password reset</a></p><p>This link expires soon and can be used once.</p>`,
     };
   }
 

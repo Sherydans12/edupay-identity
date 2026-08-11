@@ -9,6 +9,7 @@ import { AccountLifecycleService } from './account-lifecycle.service.js';
 import { MembershipController } from './membership.controller.js';
 import { PasswordPolicyService } from './password-policy.service.js';
 import { EmailModule } from '../email/email.module.js';
+import { TenantAdminBootstrapService } from '../bootstrap/tenant-admin-bootstrap.js';
 
 @Module({
   imports: [JwtModule, EmailModule],
@@ -20,6 +21,8 @@ import { EmailModule } from '../email/email.module.js';
     AccessTokenGuard,
     LogoutTokenGuard,
     IdentifierNormalizationService,
+    TenantAdminBootstrapService,
   ],
+  exports: [TenantAdminBootstrapService],
 })
 export class AuthModule {}
