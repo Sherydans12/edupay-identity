@@ -19,6 +19,7 @@
     "dev": "pnpm prisma:generate && nest start --watch",
     "start": "node dist/main.js",
     "bootstrap:tenant-admin": "node dist/bootstrap/tenant-admin-main.js",
+    "operator:correct-email": "node dist/bootstrap/identity-email-correction-main.js",
     "email:deliver": "node dist/email/worker-main.js",
     "lint": "eslint src test prisma.config.ts vitest.config.ts",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
