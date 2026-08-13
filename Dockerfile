@@ -15,7 +15,9 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS build
 
 COPY . .
-RUN pnpm prisma:generate && pnpm build
+RUN export DATABASE_URL=postgresql://build.invalid/identity \
+  && pnpm prisma:generate \
+  && pnpm build
 
 FROM dependencies AS migrate
 
