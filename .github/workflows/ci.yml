@@ -64,3 +64,14 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Build production runtime image
+        run: docker build --target runtime -t edupay-identity:ci .
+
+      - name: Build production migration image
+        run: docker build --target migrate -t edupay-identity-migrate:ci .
+
+      - name: Smoke-test production runtime artifacts
+        run: |
+          docker run --rm --entrypoint node edupay-identity:ci -e "const fs = require('node:fs'); const files = ['dist/main.js', 'dist/email/worker-main.js', 'dist/bootstrap/identity-email-correction-main.js']; if (files.some((file) => !fs.existsSync(file))) process.exit(1);"
+          docker run --rm --entrypoint node edupay-identity:ci dist/bootstrap/identity-email-correction-main.js --help
