@@ -15,7 +15,7 @@ services:
     exclude_from_hc: true
     restart: "no"
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
       target: migrate
     environment:
