@@ -18,6 +18,11 @@ import {
   parseIdentityEmailCorrectionArguments,
 } from '../src/bootstrap/identity-email-correction.js';
 import { formatIdentityEmailCorrectionOutput } from '../src/bootstrap/identity-email-correction-main.js';
+import {
+  IdentityEmailVerificationConflictError,
+  IdentityEmailVerificationService,
+} from '../src/bootstrap/identity-email-verification.js';
+import { formatIdentityEmailVerificationOutput } from '../src/bootstrap/identity-email-verification-main.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -26,6 +31,7 @@ const describeWithDatabase = databaseUrl ? describe : describe.skip;
 describeWithDatabase('operator Identity email correction (PostgreSQL integration)', () => {
   let prisma: PrismaClient;
   let correction: IdentityEmailCorrectionService;
+  let verification: IdentityEmailVerificationService;
   let target: Awaited<ReturnType<typeof createFixture>>;
 
   beforeAll(() => {
@@ -33,6 +39,7 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
     const service = new PrismaService(config);
     prisma = service;
     correction = new IdentityEmailCorrectionService(service, new IdentifierNormalizationService());
+    verification = new IdentityEmailVerificationService(service, new IdentifierNormalizationService());
   });
 
   beforeEach(async () => {
@@ -135,6 +142,16 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
       passwordResetTokensRevoked: 1,
     });
     expect(JSON.stringify(audit.metadata)).not.toContain('corrected@example.test');
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'corrected@example.test',
+    })).resolves.toMatchObject({
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: true,
+    });
   });
 
   it('preserves the membership identity, roles, and username', async () => {
@@ -175,6 +192,57 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
     expect(second).toMatchObject({ status: 'already-compatible', sessionsRevoked: 0, passwordResetTokensRevoked: 0 });
     expect(await prisma.authAuditEvent.count()).toBe(auditCount);
     expect(await prisma.outboxEvent.count()).toBe(outboxCount);
+  });
+
+  it('establishes verification for an existing unverified replacement email', async () => {
+    await prisma.loginIdentifier.updateMany({
+      where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL },
+      data: { verifiedAt: null },
+    });
+    await correction.correct(input(target, target.oldEmail));
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailVerified: true });
+  });
+
+  it('creates and verifies an email identifier when the user has none', async () => {
+    await prisma.loginIdentifier.deleteMany({ where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL } });
+    await correction.correct(input(target, 'created@example.test'));
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'created@example.test',
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailVerified: true });
+  });
+
+  it('reports an unverified or mismatched email without mutating state', async () => {
+    await prisma.loginIdentifier.updateMany({
+      where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL },
+      data: { verifiedAt: null },
+    });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailDestinationMatches: true, emailVerified: false });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'different@example.test',
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailDestinationMatches: false, emailVerified: false });
+  });
+
+  it('refuses ambiguous multiple-email state', async () => {
+    await prisma.loginIdentifier.create({
+      data: { userId: target.userId, kind: LoginIdentifierKind.EMAIL, normalizedValue: 'alternate@example.test' },
+    });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).rejects.toBeInstanceOf(IdentityEmailVerificationConflictError);
   });
 
   it('rejects a replacement email used by another user', async () => {
@@ -278,6 +346,22 @@ describe('operator Identity email correction CLI safety', () => {
     expect(output).not.toContain('passwordHash');
     expect(output).not.toContain('tokenHash');
     expect(output).not.toContain('new@example.test');
+  });
+
+  it('formats only masked read-only verification evidence', () => {
+    const output = formatIdentityEmailVerificationOutput({
+      userId: randomUUID(),
+      membershipId: randomUUID(),
+      tenantId: randomUUID(),
+      username: 'target.admin',
+      destinationEmail: 'n***@e***.test',
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: true,
+    });
+    expect(output).not.toContain('new@example.test');
+    expect(output).not.toContain('passwordHash');
   });
 });
 
