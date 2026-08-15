@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
+Final state: `HOLD_PENDING_NATIVE_ACADEMIC_API_PRIVATE_HEALTH_FAILURE_REVIEW`
 
 ## Reviewed Identity runtime
 
@@ -59,6 +59,19 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - Academic authenticated successfully with its managed runner credentials. `transaction_read_only=on`, `current_database=postgres`, `inet_server_addr=10.0.1.23`, `inet_server_port=5432`, and server version `15.18` were verified. Supplementary read-only checks found 32 public tables and 6 Prisma migration records.
 - No runner was started or modified; no migration was executed; no database write occurred. The temporary Coolify token was unset and its root-only file removed after the proof. Manual Web/live/ready (three consecutive checks), Identity health, JWKS, ClamAV, both manual databases, and the required manual/native worker counts remained healthy and unchanged.
 
+## Final native cutover retry — rolled back before routing
+
+- A fresh pre-maintenance gate passed: Coolify API version 4.1.2, manual Web/live/ready (three consecutive checks), Identity health/JWKS, manual ClamAV and both manual PostgreSQL instances, manual notification/sync singleton counts, R2 authentication, PostgreSQL 15.19 helper clients, launcher mode/pinning, reviewed Identity runtime image, and runner artifact/database-target gates were all verified. Host PostgreSQL 16.14 remained allowed and unused by backup execution.
+- Native ClamAV was started privately and passed the 4 GiB memory, healthy, `OOMKilled=false`, private TCP/3310, and clamd PING checks. It had no public 3310 mapping.
+- `FINAL_MAINTENANCE_START=2026-08-15T22:42:40Z`. Manual Web, Academic API, Identity API, notification worker, and sync worker were stopped; both manual PostgreSQL instances and manual ClamAV remained healthy. `MANUAL_WRITE_FREEZE=PASS`.
+- Fresh pre-cutover recovery point `20260815T224303Z` was created from the frozen manual state. It used `pg_dump`/`pg_restore` 15.19, verified both dumps and the private-files archive locally, and passed R2 upload, remote existence, and remote-size validation.
+- A second frozen restore input `20260815T224353Z` was created and independently verified (Identity dump, Academic dump, private-files archive, SHA256, and R2 verification). PostgreSQL 15 `pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error` restored both dumps only into the native databases at exit 0, without a `transaction_timeout` or ignored-error condition.
+- Strict read-only reconciliation passed: all 16 Identity and all 32 Academic public-table counts matched frozen manual production; the canonical tenant, canonical AcademicYear, tenant references, and TENANT_ADMIN membership were present and matched. Academic tenant references matched across 17 tenant-scoped relations. `STRICT_COUNT_RECONCILIATION=PASS`.
+- The existing Identity migration runner was started once and exited 0 with restart count 0; it retained 2 migration records with no pending migrations. The existing Academic runner was started once and reached Service status `exited`; Coolify removed its completed container before a container exit code could be retained, while the native database verified 6 migration records and no pending migrations. No runner configuration, image, or database URL was changed.
+- Native Identity and ClamAV were healthy candidates. Academic API and Academic Web were started privately. Academic API then reached `exited:unhealthy` before private health validation completed. No canonical routing, email correction/verifier, malware test, password-recovery dispatch, native notification start, or sync action occurred.
+- The before-routing rollback policy was invoked. All native candidate applications were stopped, native notification/sync remained zero, and manual Web/API/Identity plus exactly one manual notification and sync worker were restarted. Manual Web, live, ready (three consecutive checks), Identity health, and JWKS returned HTTP 200; manual ClamAV and both manual databases were healthy. Manual volumes, files, Compose, keys, and rollback route were retained.
+- The temporary Coolify token was removed. No secret, database URL, credential, reset artifact, or token was recorded in this evidence.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -104,6 +117,12 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `MIGRATION_EXECUTION=NO`
 - `DB_WRITES=NO`
 - `COOLIFY_TEMP_TOKEN_FILE_REMOVED=YES`
+- `FINAL_NATIVE_CUTOVER=ROLLBACK_BEFORE_ROUTING`
+- `PRE_NATIVE_CUTOVER_RECOVERY_POINT=20260815T224303Z`
+- `FROZEN_RESTORE_INPUT=20260815T224353Z`
+- `STRICT_COUNT_RECONCILIATION=PASS`
+- `ROLLBACK_INVOKED=YES`
+- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH=FAIL`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
