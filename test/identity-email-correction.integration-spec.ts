@@ -8,6 +8,7 @@ import {
   OutboxStatus,
   RoleCode,
   RoleScope,
+  TenantRealmStatus,
 } from '../src/generated/prisma/enums.js';
 import type { Environment } from '../src/config/environment.js';
 import { IdentifierNormalizationService } from '../src/auth/identifier-normalization.service.js';
@@ -18,7 +19,16 @@ import {
   parseIdentityEmailCorrectionArguments,
 } from '../src/bootstrap/identity-email-correction.js';
 import { formatIdentityEmailCorrectionOutput } from '../src/bootstrap/identity-email-correction-main.js';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  IdentityEmailVerificationConflictError,
+  IdentityEmailVerificationGateError,
+  IdentityEmailVerificationService,
+  assertIdentityEmailVerificationPostconditions,
+  getIdentityEmailVerificationExitCode,
+} from '../src/bootstrap/identity-email-verification.js';
+import { formatIdentityEmailVerificationOutput } from '../src/bootstrap/identity-email-verification-main.js';
+import type { IdentityEmailVerificationResult } from '../src/bootstrap/identity-email-verification.js';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithDatabase = databaseUrl ? describe : describe.skip;
@@ -26,6 +36,7 @@ const describeWithDatabase = databaseUrl ? describe : describe.skip;
 describeWithDatabase('operator Identity email correction (PostgreSQL integration)', () => {
   let prisma: PrismaClient;
   let correction: IdentityEmailCorrectionService;
+  let verification: IdentityEmailVerificationService;
   let target: Awaited<ReturnType<typeof createFixture>>;
 
   beforeAll(() => {
@@ -33,6 +44,7 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
     const service = new PrismaService(config);
     prisma = service;
     correction = new IdentityEmailCorrectionService(service, new IdentifierNormalizationService());
+    verification = new IdentityEmailVerificationService(service, new IdentifierNormalizationService());
   });
 
   beforeEach(async () => {
@@ -135,6 +147,16 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
       passwordResetTokensRevoked: 1,
     });
     expect(JSON.stringify(audit.metadata)).not.toContain('corrected@example.test');
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'corrected@example.test',
+    })).resolves.toMatchObject({
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: true,
+    });
   });
 
   it('preserves the membership identity, roles, and username', async () => {
@@ -175,6 +197,85 @@ describeWithDatabase('operator Identity email correction (PostgreSQL integration
     expect(second).toMatchObject({ status: 'already-compatible', sessionsRevoked: 0, passwordResetTokensRevoked: 0 });
     expect(await prisma.authAuditEvent.count()).toBe(auditCount);
     expect(await prisma.outboxEvent.count()).toBe(outboxCount);
+  });
+
+  it('establishes verification for an existing unverified replacement email', async () => {
+    await prisma.loginIdentifier.updateMany({
+      where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL },
+      data: { verifiedAt: null },
+    });
+    await correction.correct(input(target, target.oldEmail));
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailVerified: true });
+  });
+
+  it('creates and verifies an email identifier when the user has none', async () => {
+    await prisma.loginIdentifier.deleteMany({ where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL } });
+    await correction.correct(input(target, 'created@example.test'));
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'created@example.test',
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailVerified: true });
+  });
+
+  it('reports an unverified or mismatched email without mutating state', async () => {
+    await prisma.loginIdentifier.updateMany({
+      where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL },
+      data: { verifiedAt: null },
+    });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailDestinationMatches: true, emailVerified: false });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: 'different@example.test',
+    })).resolves.toMatchObject({ emailIdentifierCount: 1, emailDestinationMatches: false, emailVerified: false });
+  });
+
+  it('reports missing EMAIL state without mutating the account', async () => {
+    await prisma.loginIdentifier.deleteMany({ where: { userId: target.userId, kind: LoginIdentifierKind.EMAIL } });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({
+      emailIdentifierCount: 0,
+      emailDestinationMatches: false,
+      emailVerified: false,
+      tenantAdminPresent: true,
+    });
+  });
+
+  it('reports missing TENANT_ADMIN state without mutating the account', async () => {
+    await prisma.membershipRole.deleteMany({ where: { membershipId: target.membershipId } });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).resolves.toMatchObject({
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: false,
+    });
+  });
+
+  it('refuses ambiguous multiple-email state', async () => {
+    await prisma.loginIdentifier.create({
+      data: { userId: target.userId, kind: LoginIdentifierKind.EMAIL, normalizedValue: 'alternate@example.test' },
+    });
+    await expect(verification.verify({
+      tenantId: target.tenantId,
+      username: 'target.admin',
+      email: target.oldEmail,
+    })).rejects.toBeInstanceOf(IdentityEmailVerificationConflictError);
   });
 
   it('rejects a replacement email used by another user', async () => {
@@ -279,7 +380,107 @@ describe('operator Identity email correction CLI safety', () => {
     expect(output).not.toContain('tokenHash');
     expect(output).not.toContain('new@example.test');
   });
+
+  it('formats only masked read-only verification evidence', () => {
+    const output = formatIdentityEmailVerificationOutput({
+      userId: randomUUID(),
+      membershipId: randomUUID(),
+      tenantId: randomUUID(),
+      username: 'target.admin',
+      destinationEmail: 'n***@e***.test',
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: true,
+    });
+    expect(output).not.toContain('new@example.test');
+    expect(output).not.toContain('passwordHash');
+  });
+
+  it('passes the fully compatible state with exit code 0', () => {
+    const result = verificationResult();
+    expect(getIdentityEmailVerificationExitCode(result)).toBe(0);
+    expect(() => assertIdentityEmailVerificationPostconditions(result)).not.toThrow();
+  });
+
+  it.each([
+    ['verifiedAt NULL', { emailVerified: false }],
+    ['expected email mismatch', { emailDestinationMatches: false, emailVerified: false }],
+    ['no EMAIL', { emailIdentifierCount: 0, emailDestinationMatches: false, emailVerified: false }],
+    ['multiple EMAIL', { emailIdentifierCount: 2 }],
+    ['TENANT_ADMIN missing', { tenantAdminPresent: false }],
+  ])('fails closed for %s with exit code 1', (_state, overrides) => {
+    const result = verificationResult(overrides);
+    expect(getIdentityEmailVerificationExitCode(result)).toBe(1);
+    expect(() => assertIdentityEmailVerificationPostconditions(result)).toThrow(IdentityEmailVerificationGateError);
+  });
+
+  it('does not write through Prisma while verifying', async () => {
+    const writeAttempt = vi.fn(() => {
+      throw new Error('verification attempted a write');
+    });
+    const userId = randomUUID();
+    const membershipId = randomUUID();
+    const tenantId = randomUUID();
+    const readOnlyPrisma = {
+      tenantRealm: {
+        findUnique: vi.fn().mockResolvedValue({ status: TenantRealmStatus.ACTIVE }),
+        create: writeAttempt,
+        update: writeAttempt,
+        delete: writeAttempt,
+      },
+      loginIdentifier: {
+        findMany: vi.fn()
+          .mockResolvedValueOnce([{ userId }])
+          .mockResolvedValueOnce([{ normalizedValue: 'target@example.test', verifiedAt: new Date() }]),
+        create: writeAttempt,
+        update: writeAttempt,
+        delete: writeAttempt,
+      },
+      tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([{ id: membershipId }]),
+        create: writeAttempt,
+        update: writeAttempt,
+        delete: writeAttempt,
+      },
+      membershipRole: {
+        count: vi.fn().mockResolvedValue(1),
+        create: writeAttempt,
+        update: writeAttempt,
+        delete: writeAttempt,
+      },
+      $transaction: writeAttempt,
+    } as unknown as PrismaService;
+
+    await expect(new IdentityEmailVerificationService(
+      readOnlyPrisma,
+      new IdentifierNormalizationService(),
+    ).verify({ tenantId, username: 'target.admin', email: 'target@example.test' })).resolves.toMatchObject({
+      emailIdentifierCount: 1,
+      emailDestinationMatches: true,
+      emailVerified: true,
+      tenantAdminPresent: true,
+    });
+    expect(writeAttempt).not.toHaveBeenCalled();
+  });
 });
+
+function verificationResult(
+  overrides: Partial<IdentityEmailVerificationResult> = {},
+): IdentityEmailVerificationResult {
+  return {
+    userId: randomUUID(),
+    membershipId: randomUUID(),
+    tenantId: randomUUID(),
+    username: 'target.admin',
+    destinationEmail: 't***@e***.test',
+    emailIdentifierCount: 1,
+    emailDestinationMatches: true,
+    emailVerified: true,
+    tenantAdminPresent: true,
+    ...overrides,
+  };
+}
 
 function input(target: Awaited<ReturnType<typeof createFixture>>, email: string) {
   return {

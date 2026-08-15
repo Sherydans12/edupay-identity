@@ -30,3 +30,16 @@ The replacement email is explicitly marked verified by this operator-owned corre
 - Conflicting, inactive, missing, cross-tenant, or ambiguous state is refused rather than repaired automatically.
 
 The command emits only structured safe evidence: status, Identity user and membership IDs, canonical tenant ID, normalized username, masked destination, revocation counts, and request ID.
+
+## Post-correction verification
+
+Run the read-only postcondition gate after the correction:
+
+```sh
+pnpm operator:verify-email-state -- \
+  --tenant-id <canonical-tenant-uuid> \
+  --username <existing-username> \
+  --email <expected-email>
+```
+
+EMAIL identifiers are global and have `tenantRealmId=NULL`. The verifier first resolves the tenant-scoped `USERNAME`, then resolves the global `EMAIL` by `userId`. The CLI is fail-closed and is the canonical operator postcondition gate: it exits zero only when exactly one EMAIL exists, the expected destination matches, the EMAIL is verified, and the tenant membership has `TENANT_ADMIN`. It emits no raw email and performs no writes.
