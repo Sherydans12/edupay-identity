@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_FINAL_CUTOVER_AUTHORIZATION`
+Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 
 ## Reviewed Identity runtime
 
@@ -36,6 +36,17 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_AUTHORIZATION`
 - Manual ClamAV, Identity DB, and Academic DB were healthy. Exactly one manual notification worker and one manual sync worker were running.
 - The private native Identity runtime remained a single main-process container; no native notification or sync worker was started. No canonical routing, domains, key storage, firewall, BL-002, maintenance state, password recovery, or production data was changed.
 
+## PostgreSQL 15 launcher execution-path remediation
+
+- The host PostgreSQL clients remain unchanged at `pg_dump 16.14` and `pg_restore 16.14`. They are not used by either backup workflow.
+- Inspection showed that both previous launchers already dispatched their dump workflow to a PostgreSQL helper by mutable tag. The remaining defect was the absence of a per-invocation, fail-closed assertion for both effective clients and reliance on the tag rather than the local immutable image ID.
+- Both root-only launchers now pin the trusted helper image ID `sha256:9363eb01b7fa3f877b50daf236666df0735c45efad5ccc5d5c9e32378fad3311`, use only their required private network (`edupay-private` for manual and `coolify` for native), publish no ports, and run the reviewed backup script in the helper.
+- Before every effective backup operation, the helper asserts `pg_dump` and `pg_restore` major 15 and reports `15.19`. A mismatch exits before any dump.
+- Online manual proof `PG15_MANUAL_LAUNCHER_PROOF=20260815T192221Z` passed: both database dumps, private-files archive, SHA-256 verification, R2 upload, remote existence, and remote size checks. Its Identity archive restored into disposable PostgreSQL 15 at exit 0, with 16 public tables and no `transaction_timeout` or ignored-error marker.
+- Native proof against the explicitly non-authoritative native databases `PG15_NATIVE_LAUNCHER_PROOF=20260815T192510Z` passed with the same artifact and R2 checks. Its Identity archive restored into disposable PostgreSQL 15 at exit 0, with 16 public tables and no prohibited restore marker.
+- Both launchers remain `root:root` mode `0700`; the R2 configuration remains `root:root` mode `0600`. Static checks found no secret literals, persisted database URLs, Docker-socket mount, signing-key mount, or published database port. Helper and disposable restore containers were removed after each proof.
+- Manual production regression after the proofs passed: Web, live, ready (three consecutive checks), Identity health, and JWKS returned HTTP 200; ClamAV and both manual PostgreSQL containers were healthy; exactly one manual notification worker and one manual sync worker remained running; native notification and sync workers remained stopped. No maintenance, routing, domain, BL-002, firewall, product-source, or worker-state change was made.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -49,6 +60,20 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_AUTHORIZATION`
 - `IDENTITY_EMAIL_CORRECTION_IDEMPOTENCY=PASS`
 - `IDENTITY_EMAIL_VERIFIER_FAIL_CLOSED=PASS`
 - `PG15_BACKUP_TOOLING_GATE=PASS`
+- `HOST_POSTGRES_CLIENT_UNCHANGED=YES`
+- `MANUAL_LAUNCHER_USES_HELPER=YES`
+- `NATIVE_LAUNCHER_USES_HELPER=YES`
+- `MANUAL_EFFECTIVE_PG_DUMP_MAJOR=15`
+- `MANUAL_EFFECTIVE_PG_RESTORE_MAJOR=15`
+- `NATIVE_EFFECTIVE_PG_DUMP_MAJOR=15`
+- `NATIVE_EFFECTIVE_PG_RESTORE_MAJOR=15`
+- `PG15_MANUAL_LAUNCHER_PROOF=PASS`
+- `PG15_MANUAL_LAUNCHER_RESTORE_PROOF=PASS`
+- `PG15_NATIVE_LAUNCHER_PROOF=PASS`
+- `PG15_NATIVE_LAUNCHER_RESTORE_PROOF=PASS`
+- `NO_PUBLIC_DB_PORTS=PASS`
+- `NO_SECRET_LITERAL=PASS`
+- `PG15_BACKUP_TOOLING_REMEDIATION=PASS`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
