@@ -38,6 +38,40 @@ export class IdentityEmailVerificationConflictError extends Error {}
 
 export class IdentityEmailVerificationUsageError extends Error {}
 
+export class IdentityEmailVerificationGateError extends Error {
+  readonly failedPostconditions: readonly string[];
+
+  constructor(failedPostconditions: readonly string[]) {
+    super(`Required postconditions failed: ${failedPostconditions.join(', ')}.`);
+    this.name = 'IdentityEmailVerificationGateError';
+    this.failedPostconditions = failedPostconditions;
+  }
+}
+
+export function getIdentityEmailVerificationGateFailures(
+  result: IdentityEmailVerificationResult,
+): readonly string[] {
+  const failures: string[] = [];
+  if (result.emailIdentifierCount !== 1) failures.push('emailIdentifierCount === 1');
+  if (!result.emailDestinationMatches) failures.push('emailDestinationMatches === true');
+  if (!result.emailVerified) failures.push('emailVerified === true');
+  if (!result.tenantAdminPresent) failures.push('tenantAdminPresent === true');
+  return failures;
+}
+
+export function getIdentityEmailVerificationExitCode(
+  result: IdentityEmailVerificationResult,
+): 0 | 1 {
+  return getIdentityEmailVerificationGateFailures(result).length === 0 ? 0 : 1;
+}
+
+export function assertIdentityEmailVerificationPostconditions(
+  result: IdentityEmailVerificationResult,
+): void {
+  const failures = getIdentityEmailVerificationGateFailures(result);
+  if (failures.length > 0) throw new IdentityEmailVerificationGateError(failures);
+}
+
 export function parseIdentityEmailVerificationArguments(
   args: readonly string[],
 ): IdentityEmailVerificationInput | { readonly help: true } {

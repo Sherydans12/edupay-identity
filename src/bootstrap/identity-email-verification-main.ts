@@ -9,8 +9,10 @@ import { PrismaService } from '../persistence/prisma.service.js';
 import {
   IDENTITY_EMAIL_VERIFICATION_USAGE,
   IdentityEmailVerificationConflictError,
+  IdentityEmailVerificationGateError,
   IdentityEmailVerificationService,
   IdentityEmailVerificationUsageError,
+  assertIdentityEmailVerificationPostconditions,
   parseIdentityEmailVerificationArguments,
 } from './identity-email-verification.js';
 import type { IdentityEmailVerificationResult } from './identity-email-verification.js';
@@ -60,7 +62,9 @@ async function main(): Promise<void> {
   const verification = new IdentityEmailVerificationService(prisma, new IdentifierNormalizationService());
 
   try {
-    console.log(formatIdentityEmailVerificationOutput(await verification.verify(parsed)));
+    const result = await verification.verify(parsed);
+    console.log(formatIdentityEmailVerificationOutput(result));
+    assertIdentityEmailVerificationPostconditions(result);
   } finally {
     await prisma.$disconnect();
   }
@@ -72,6 +76,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       console.error(`${error.message}\n${IDENTITY_EMAIL_VERIFICATION_USAGE}`);
     } else if (error instanceof IdentityEmailVerificationConflictError) {
       console.error(`Identity email verification refused: ${error.message}`);
+    } else if (error instanceof IdentityEmailVerificationGateError) {
+      console.error(`Identity email verification gate failed: ${error.message}`);
     } else {
       console.error('Identity email verification failed. No credential or token value was logged.');
     }
