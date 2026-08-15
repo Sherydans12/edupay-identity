@@ -47,6 +47,18 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - Both launchers remain `root:root` mode `0700`; the R2 configuration remains `root:root` mode `0600`. Static checks found no secret literals, persisted database URLs, Docker-socket mount, signing-key mount, or published database port. Helper and disposable restore containers were removed after each proof.
 - Manual production regression after the proofs passed: Web, live, ready (three consecutive checks), Identity health, and JWKS returned HTTP 200; ClamAV and both manual PostgreSQL containers were healthy; exactly one manual notification worker and one manual sync worker remained running; native notification and sync workers remained stopped. No maintenance, routing, domain, BL-002, firewall, product-source, or worker-state change was made.
 
+## Migration-runner native database-target proof
+
+- The runner artifact gate uses two distinct checks: the configured Service image reference must equal the reviewed source-backed tag, and Docker must resolve that tag locally to its authorized image ID. It does not compare a tag string directly with an image ID. The Identity runner reference `bgaqul218khdtq3se4pf8dnj_migrate:c511716f077752f69d0b0dff7e5f9174d51a3103` resolved to `sha256:d4bea300ee2eff6fd33d89287ba9145ffe0932052efe80d80d19eadc686130b9`; the Academic runner reference `h1j4z41841v4d8qx2cwmrbht_migrate:a75e8d7b6c57850a52b5bcccb1c606a25b80cd02` resolved to `sha256:385164d3153317b80ed9b73e18bd1fbf59e5338daef12c90a6ffb565f69de720`.
+- Both runner Services remained configured with `restart: "no"`, `exclude_from_hc: true`, private Coolify-network connectivity, no domain, no published port, and no build or automatic-pull substitution behavior. No runner container was running during this proof.
+- The official read-only `GET /api/v1/services/{service_uuid}/envs` endpoint authenticated successfully. Each Service had exactly one `DATABASE_URL`; the effective field was `value` and was processed only in memory. No URL, username, password, token, or raw API response was persisted.
+- Identity resolved to the native Identity resource `bluypktxta8uisbrfzu6p9pw`, port `5432`, database `postgres`; the native endpoint IPv4 was `10.0.1.22`. Academic resolved to `v5w9hacwtftulf4m46l1rn2g`, port `5432`, database `postgres`; its native endpoint IPv4 was `10.0.1.23`.
+- Exact runner-image DNS and TCP probes passed for both managed hostnames on the `coolify` network. The network is dual-stack; a normal helper connection selected the verified Identity endpoint's IPv6 address. The final diagnostic used transient libpq `PGHOSTADDR` with each independently verified IPv4 while retaining the managed `PGHOST`; this changed no Service environment and established the required IPv4 server-address proof.
+- The trusted immutable PostgreSQL helper `sha256:9363eb01b7fa3f877b50daf236666df0735c45efad5ccc5d5c9e32378fad3311` reported PostgreSQL client major 15. Each diagnostic was an ephemeral, read-only, no-port, no-mount container on `coolify`, used `default_transaction_read_only=on` plus `BEGIN TRANSACTION READ ONLY`, and was removed afterward.
+- Identity authenticated successfully with the managed runner credentials. `transaction_read_only=on`, `current_database=postgres`, `inet_server_addr=10.0.1.22`, `inet_server_port=5432`, and server version `15.18` were verified. Supplementary read-only checks found 16 public tables and 2 Prisma migration records.
+- Academic authenticated successfully with its managed runner credentials. `transaction_read_only=on`, `current_database=postgres`, `inet_server_addr=10.0.1.23`, `inet_server_port=5432`, and server version `15.18` were verified. Supplementary read-only checks found 32 public tables and 6 Prisma migration records.
+- No runner was started or modified; no migration was executed; no database write occurred. The temporary Coolify token was unset and its root-only file removed after the proof. Manual Web/live/ready (three consecutive checks), Identity health, JWKS, ClamAV, both manual databases, and the required manual/native worker counts remained healthy and unchanged.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -74,6 +86,24 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `NO_PUBLIC_DB_PORTS=PASS`
 - `NO_SECRET_LITERAL=PASS`
 - `PG15_BACKUP_TOOLING_REMEDIATION=PASS`
+- `IDENTITY_RUNNER_CONFIGURED_IMAGE_REF=PASS`
+- `IDENTITY_RUNNER_RESOLVED_IMAGE_ID=PASS`
+- `ACADEMIC_RUNNER_CONFIGURED_IMAGE_REF=PASS`
+- `ACADEMIC_RUNNER_RESOLVED_IMAGE_ID=PASS`
+- `IDENTITY_RUNNER_DATABASE_AUTH=PASS`
+- `IDENTITY_RUNNER_DATABASE_CONNECTION_TARGET=PASS`
+- `IDENTITY_RUNNER_DB_TARGET=PASS`
+- `IDENTITY_DATABASE_URL_REMEDIATION_REQUIRED=NO`
+- `ACADEMIC_RUNNER_DATABASE_AUTH=PASS`
+- `ACADEMIC_RUNNER_DATABASE_CONNECTION_TARGET=PASS`
+- `ACADEMIC_RUNNER_DB_TARGET=PASS`
+- `ACADEMIC_DATABASE_URL_REMEDIATION_REQUIRED=NO`
+- `MIGRATION_RUNNER_ARTIFACT_GATE=PASS`
+- `MIGRATION_RUNNER_DATABASE_TARGET_GATE=PASS`
+- `RUNNER_MUTATIONS=NO`
+- `MIGRATION_EXECUTION=NO`
+- `DB_WRITES=NO`
+- `COOLIFY_TEMP_TOKEN_FILE_REMOVED=YES`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
