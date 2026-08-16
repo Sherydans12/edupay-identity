@@ -32,6 +32,19 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `FINAL_NATIVE_CUTOVER=FAIL`
 - `FINAL_STATE=HOLD_PENDING_IMMUTABLE_MIGRATION_RUNNER_ARTIFACT_RECOVERY`
 
+## Durable migration-runner remediation and final cutover rollback
+
+- Exact migration-source equivalence passed: Identity runner source `c511716f077752f69d0b0dff7e5f9174d51a3103` has identical Prisma migration/schema inputs to reviewed runtime source `4a684fac5734d24a553d174cb7c3ae3c615c942a`; Academic runner source `a75e8d7b6c57850a52b5bcccb1c606a25b80cd02` has identical migration tree, schema, and lockfile inputs to reviewed source `5b0ad1f5f8ab0552ed1c502f30840b4afcc13fd8`.
+- New public immutable artifacts were built by merged workflow-dispatch-only GitHub Actions workflows, each checking out its exact runner source SHA: Identity `ghcr.io/sherydans12/edupay-identity-migrate@sha256:b20d4c848058789dd5ee11e32c6dc80bb2a81451395eff51a5b57768e5bf0da0`; Academic `ghcr.io/sherydans12/edupay-academico-migrate@sha256:e19a90f17770b27cc43be31a9dc9196b4a1aec456cbc3467ffccbfeed2d19970`.
+- OCI provenance and commands matched; anonymous digest pulls, secret/history checks, disposable PostgreSQL 15 migrations and idempotent reruns, native non-authoritative proofs, exact existing-runner patches, target-host checks, and targeted local-removal/reacquisition proofs all passed. `MIGRATION_RUNNER_DURABLE_ARTIFACT_REMEDIATION=PASS`; `MIGRATION_RUNNER_ARTIFACT_GATE=PASS`; `MIGRATION_RUNNER_DATABASE_TARGET_GATE=PASS`.
+- The final frozen cutover created a new pre-cutover recovery point `20260816T063114Z`, restored both frozen manual databases into native with PostgreSQL 15, passed checksums, and passed all-table strict reconciliation. The updated existing runners completed successfully.
+- Native Identity and Academic API reached healthy private state. Native Academic Web did not produce a healthy candidate within the bounded startup window. Canonical routing was not changed, so before-routing rollback stopped native candidates and restored manual Identity, Academic API/Web, and exactly one manual notification and sync worker. Manual Web, Identity, and three Academic readiness checks passed afterward.
+- `PRE_NATIVE_CUTOVER_RECOVERY_POINT=20260816T063114Z`
+- `STRICT_COUNT_RECONCILIATION=PASS`
+- `ROLLBACK_INVOKED=YES`
+- `FINAL_NATIVE_CUTOVER=FAIL`
+- `FINAL_STATE=HOLD_PENDING_NATIVE_ACADEMIC_WEB_PRIVATE_HEALTH`
+
 ## PG15 public GHCR helper remediation — 2026-08-16
 
 Policy decision: `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`. Public visibility is intentional because the helper contains no EduPay application source, credentials, or secrets; its Dockerfile is already reviewed; integrity is enforced by the immutable manifest digest; and anonymous pull removes VPS registry-credential dependency. Public anonymous pull is therefore not a confidentiality failure.
