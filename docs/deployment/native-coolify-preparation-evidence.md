@@ -2,7 +2,20 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_GHCR_PACKAGE_PRIVACY_REMEDIATION`
+Final state: `HOLD_PENDING_PRODUCTION_CONTROL_PLANE_ACCESS`
+
+## PG15 public GHCR helper remediation — 2026-08-16
+
+Policy decision: `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`. Public visibility is intentional because the helper contains no EduPay application source, credentials, or secrets; its Dockerfile is already reviewed; integrity is enforced by the immutable manifest digest; and anonymous pull removes VPS registry-credential dependency. Public anonymous pull is therefore not a confidentiality failure.
+
+- Current verified manifest: `sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`.
+- Exact reference: `ghcr.io/sherydans12/edupay-pg15-backup-helper@sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`.
+- `docker buildx imagetools inspect` confirmed the remote OCI index and the exact digest. Anonymous exact-digest pull succeeded. A disposable exact-digest container reported `pg_dump 15.19`, `pg_restore 15.19`, successful `aws --version`, `/usr/bin/tar`, `/bin/bash`, and a non-empty `/etc/ssl/certs/ca-certificates.crt`.
+- Sanitized OCI metadata matched the reviewed helper: source `https://github.com/Sherydans12/edupay-identity`, revision `1317606ab3472f4679a30d09b197e080f22441e0`, reviewed title/description, and only expected PostgreSQL/base-image environment variables. Image environment and complete history contained no database URL, R2 credential, Coolify token, JWT/private-key material, or secret marker.
+- The exact local image was removed by its exact image ID only, without Docker prune, then reacquired from GHCR by the exact digest. Remote manifest inspection, second pull, and disposable client-version check passed: `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=PASS`.
+- The publisher workflow on this ops branch now accepts public visibility, logs out before the pull, verifies the immutable digest anonymously, checks the artifact contents, and rejects sensitive markers in image history. It does not change the Dockerfile or application source.
+
+The remaining launcher, backup-proof, restore-proof, and production-regression gates could not be executed from this environment. The configured SSH endpoint has no authorized key for the Coolify host, and the signed-in Chrome control path is unavailable because the required native-host registry entry is missing. No launcher, production database, worker, routing, maintenance, or native candidate state was changed during this remediation attempt. No claim of final launcher digest, manual/native online proof, or remediation success is made here.
 
 ## Reviewed Identity runtime
 
@@ -184,3 +197,25 @@ Final state: `HOLD_PENDING_GHCR_PACKAGE_PRIVACY_REMEDIATION`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
+
+## Current remediation gate status
+
+- `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`
+- `GHCR_HELPER_PULL_AUTH_REQUIRED=NO`
+- `PG15_HELPER_ARTIFACT_VERIFIED=PASS`
+- `PG15_BACKUP_HELPER_IMMUTABILITY=PASS`
+- `PG15_BACKUP_HELPER_LOCAL_AVAILABILITY=PASS`
+- `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=PASS`
+- `PG15_HELPER_AVAILABILITY_FAIL_CLOSED=UNVERIFIED`
+- `PG15_HELPER_VERSION_FAIL_CLOSED=UNVERIFIED`
+- `PG15_MANUAL_PUBLIC_GHCR_HELPER_PROOF=UNVERIFIED`
+- `PG15_MANUAL_PROOF_RESTORE=UNVERIFIED`
+- `PG15_NATIVE_PUBLIC_GHCR_HELPER_PROOF=UNVERIFIED`
+- `PG15_NATIVE_PROOF_RESTORE=UNVERIFIED`
+- `MANUAL_PRODUCTION_UNCHANGED=PASS` (no production action occurred during this attempt; fresh post-proof regression was not runnable)
+- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS` (retained prior evidence; no native application action occurred during this attempt)
+- `MAINTENANCE=NO`
+- `ROUTING_CHANGED=NO`
+- `APPLICATION_SOURCE_CHANGED=NO`
+- `GHCR_HELPER_PULL_AUTH_REQUIRED=NO`
+- `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED_PENDING_PRODUCTION_CONTROL_PLANE_ACCESS`

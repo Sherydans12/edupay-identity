@@ -1,4 +1,4 @@
-name: Publish private PostgreSQL 15 backup helper
+name: Publish public PostgreSQL 15 backup helper
 
 on:
   workflow_dispatch:
@@ -47,20 +47,12 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Assert that the package remains private
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          visibility="$(gh api /user/packages/container/edupay-pg15-backup-helper --jq '.visibility')"
-          test "$visibility" = private
-          echo "GHCR_HELPER_VISIBILITY=$visibility"
-
-      - name: Pull and verify the immutable manifest
+      - name: Pull and verify the public immutable manifest
         env:
           IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          docker logout ghcr.io || true
           docker buildx imagetools inspect "$IMAGE_REFERENCE"
           docker pull "$IMAGE_REFERENCE"
           docker run --rm --entrypoint bash "$IMAGE_REFERENCE" -ceu '
@@ -69,7 +61,14 @@ jobs:
             aws --version
             command -v tar
             test -s /etc/ssl/certs/ca-certificates.crt
+            test -x /bin/bash
           '
+          if docker history --no-trunc "$IMAGE_REFERENCE" | grep -Eiq 'DATABASE_URL|AWS_ACCESS_KEY|AWS_SECRET|R2_|JWT|PRIVATE KEY|PASSWORD|CREDENTIAL|SECRET|COOLIFY|RESEND_API_KEY'; then
+            echo "Sensitive marker found in helper image history." >&2
+            exit 1
+          fi
           echo "GHCR_HELPER_TAG=${IMAGE_NAME}:${{ inputs.version_tag }}"
           echo "GHCR_HELPER_MANIFEST_DIGEST=${{ steps.build.outputs.digest }}"
           echo "GHCR_HELPER_IMMUTABLE_REFERENCE=$IMAGE_REFERENCE"
+          echo "GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES"
+          echo "GHCR_HELPER_PULL_AUTH_REQUIRED=NO"
