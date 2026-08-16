@@ -1,0 +1,75 @@
+name: Publish private PostgreSQL 15 backup helper
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Reviewed informational image tag (the manifest digest is authoritative)
+        required: true
+        default: pg15.19-20260816
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/sherydans12/edupay-pg15-backup-helper
+
+jobs:
+  publish:
+    name: Build, publish, and verify helper
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the dispatched revision
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the helper
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/backup-helper
+          file: deploy/backup-helper/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ inputs.version_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Assert that the package remains private
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          visibility="$(gh api /user/packages/container/edupay-pg15-backup-helper --jq '.visibility')"
+          test "$visibility" = private
+          echo "GHCR_HELPER_VISIBILITY=$visibility"
+
+      - name: Pull and verify the immutable manifest
+        env:
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE_REFERENCE"
+          docker pull "$IMAGE_REFERENCE"
+          docker run --rm --entrypoint bash "$IMAGE_REFERENCE" -ceu '
+            pg_dump --version | grep -E "^pg_dump \(PostgreSQL\) 15\.19"
+            pg_restore --version | grep -E "^pg_restore \(PostgreSQL\) 15\.19"
+            aws --version
+            command -v tar
+            test -s /etc/ssl/certs/ca-certificates.crt
+          '
+          echo "GHCR_HELPER_TAG=${IMAGE_NAME}:${{ inputs.version_tag }}"
+          echo "GHCR_HELPER_MANIFEST_DIGEST=${{ steps.build.outputs.digest }}"
+          echo "GHCR_HELPER_IMMUTABLE_REFERENCE=$IMAGE_REFERENCE"
