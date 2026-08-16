@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_PRODUCTION_CONTROL_PLANE_ACCESS`
+Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 
 ## PG15 public GHCR helper remediation — 2026-08-16
 
@@ -16,7 +16,23 @@ Policy decision: `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`. Public visibility is 
 - The exact local image was removed by its exact image ID only, without Docker prune, then reacquired from GHCR by the exact digest. Remote manifest inspection, second pull, and disposable client-version check passed: `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=PASS`.
 - The publisher workflow on this ops branch now accepts public visibility, logs out before the pull, verifies the immutable digest anonymously, checks the artifact contents, and rejects sensitive markers in image history. It does not change the Dockerfile or application source.
 
-The remaining launcher, backup-proof, restore-proof, and production-regression gates could not be executed from this environment. The configured SSH endpoint has no authorized key for the Coolify host, and the signed-in Chrome control path is unavailable because the required native-host registry entry is missing. No launcher, production database, worker, routing, maintenance, or native candidate state was changed during this remediation attempt. No claim of final launcher digest, manual/native online proof, or remediation success is made here.
+The initial evidence capture recorded a temporary production-control-plane access blocker. That blocker was subsequently resolved with the owner-provisioned operational access, and the completed live remediation and proof results are recorded below. No supplied credential or secret is recorded in this evidence.
+
+## Completed live PG15 public-helper remediation — 2026-08-16
+
+- `SSH_ROOT_ACCESS=PASS` on the EduPay VPS. Docker access passed (`29.3.1`). Coolify API authentication and both required application-resource reads passed; the API reported the expected Coolify version `4.1.2`.
+- The authoritative production baseline passed before remediation: Academic Web 200; Academic live 200; Academic ready 200 three consecutive times; Identity health 200; JWKS 200; manual ClamAV, Identity DB, and Academic DB healthy; manual notification and sync workers each `1`; native notification and sync workers each `0`; migration runners stopped/exited; canonical routing remained manual.
+- `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES` and `GHCR_HELPER_PULL_AUTH_REQUIRED=NO` remain intentional policy decisions. The final manifest is `sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`, with exact reference `ghcr.io/sherydans12/edupay-pg15-backup-helper@sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`.
+- Anonymous exact-digest pull, disposable exact-digest execution, `pg_dump 15.19`, `pg_restore 15.19`, AWS CLI, tar, CA bundle, and bash all passed. OCI source/build metadata continued to match the reviewed helper. `PG15_HELPER_ARTIFACT_VERIFIED=PASS`, `PG15_BACKUP_HELPER_IMMUTABILITY=PASS`, `PG15_BACKUP_HELPER_LOCAL_AVAILABILITY=PASS`, and `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=PASS`.
+- Both launchers now use the exact reference above. Manual uses `edupay-private`; native uses `coolify`. Both remain `root:root` mode `0700`; the R2 environment remains `root:root` mode `0600`. Per invocation, each launcher verifies the exact repository digest before dumping and asserts PostgreSQL major `15` for both clients. No public port, Docker socket, Identity signing-key mount, mutable tag, or local-only image ID is used.
+- Availability fail-closed testing used invalid exact-digest disposable launcher copies. Both manual and native copies aborted before any dump; the verified reference was restored afterward: `PG15_HELPER_AVAILABILITY_FAIL_CLOSED=PASS`.
+- Version fail-closed testing used a disposable PostgreSQL 16.15 helper and disposable launcher copies only. Both aborted before dump execution; production launchers remained PostgreSQL 15 pinned: `PG15_HELPER_VERSION_FAIL_CLOSED=PASS`.
+- Manual non-cutover online proof `PG15_MANUAL_PUBLIC_GHCR_HELPER_PROOF=20260816T053529Z` passed with the exact helper, `pg_dump 15.19`, `pg_restore 15.19`, Identity and Academic dumps, private-files archive, SHA256, R2 upload, remote existence, remote size, and launcher exit 0. The Identity archive restored into isolated disposable PostgreSQL 15 at exit 0 with 16 public tables, no `transaction_timeout`, and no ignored restore errors: `PG15_MANUAL_PROOF_RESTORE=PASS`.
+- Native non-authoritative online proof `PG15_NATIVE_PUBLIC_GHCR_HELPER_PROOF=20260816T053645Z` passed with the same exact-helper, client-version, dump, private-files, SHA256, R2 upload, remote existence/size, and exit checks. Its Identity archive restored into isolated disposable PostgreSQL 15 at exit 0 with 16 public tables, no `transaction_timeout`, and no ignored restore errors: `PG15_NATIVE_PROOF_RESTORE=PASS`.
+- R2 upload and remote existence/size verification passed for both proof timestamps. Local proof staging, disposable containers/networks, test artifacts, and the transient Coolify token file were removed. The helper image environment/history scan found no database URL, R2 credential, Coolify token, JWT/private-key material, or secret marker. Public helper visibility is accepted because the helper contains no application source or secrets and integrity is enforced by the immutable digest.
+- Final regression passed without maintenance or routing changes: Academic Web/live/ready and Identity health/JWKS all returned 200; manual ClamAV, Identity DB, and Academic DB were healthy; manual notification/sync remained `1/1`; native notification/sync remained `0/0`; migration runners remained stopped/exited; public PostgreSQL ports remained absent. `MANUAL_PRODUCTION_UNCHANGED=PASS` and `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS`.
+- No production database was mutated, no current production data was restored into native databases, no cutover was performed, no native worker was started, no FULL sync was run, no BL-002 or product/application source was changed, and no password recovery was sent. `MAINTENANCE=NO`, `ROUTING_CHANGED=NO`, `APPLICATION_SOURCE_CHANGED=NO`.
+- Final gates: `PG15_BACKUP_HELPER_REMEDIATION=PASS`. Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`.
 
 ## Reviewed Identity runtime
 
@@ -207,16 +223,17 @@ The remaining launcher, backup-proof, restore-proof, and production-regression g
 - `PG15_BACKUP_HELPER_IMMUTABILITY=PASS`
 - `PG15_BACKUP_HELPER_LOCAL_AVAILABILITY=PASS`
 - `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=PASS`
-- `PG15_HELPER_AVAILABILITY_FAIL_CLOSED=UNVERIFIED`
-- `PG15_HELPER_VERSION_FAIL_CLOSED=UNVERIFIED`
-- `PG15_MANUAL_PUBLIC_GHCR_HELPER_PROOF=UNVERIFIED`
-- `PG15_MANUAL_PROOF_RESTORE=UNVERIFIED`
-- `PG15_NATIVE_PUBLIC_GHCR_HELPER_PROOF=UNVERIFIED`
-- `PG15_NATIVE_PROOF_RESTORE=UNVERIFIED`
-- `MANUAL_PRODUCTION_UNCHANGED=PASS` (no production action occurred during this attempt; fresh post-proof regression was not runnable)
-- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS` (retained prior evidence; no native application action occurred during this attempt)
+- `PG15_HELPER_AVAILABILITY_FAIL_CLOSED=PASS`
+- `PG15_HELPER_VERSION_FAIL_CLOSED=PASS`
+- `PG15_MANUAL_PUBLIC_GHCR_HELPER_PROOF=20260816T053529Z`
+- `PG15_MANUAL_PROOF_RESTORE=PASS`
+- `PG15_NATIVE_PUBLIC_GHCR_HELPER_PROOF=20260816T053645Z`
+- `PG15_NATIVE_PROOF_RESTORE=PASS`
+- `MANUAL_PRODUCTION_UNCHANGED=PASS`
+- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS`
 - `MAINTENANCE=NO`
 - `ROUTING_CHANGED=NO`
 - `APPLICATION_SOURCE_CHANGED=NO`
 - `GHCR_HELPER_PULL_AUTH_REQUIRED=NO`
-- `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED_PENDING_PRODUCTION_CONTROL_PLANE_ACCESS`
+- `PG15_BACKUP_HELPER_REMEDIATION=PASS`
+- `FINAL_STATE=HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
