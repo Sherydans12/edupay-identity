@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_NATIVE_ACADEMIC_API_PRIVATE_HEALTH_FAILURE_REVIEW`
+Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 
 ## Reviewed Identity runtime
 
@@ -72,6 +72,20 @@ Final state: `HOLD_PENDING_NATIVE_ACADEMIC_API_PRIVATE_HEALTH_FAILURE_REVIEW`
 - The before-routing rollback policy was invoked. All native candidate applications were stopped, native notification/sync remained zero, and manual Web/API/Identity plus exactly one manual notification and sync worker were restarted. Manual Web, live, ready (three consecutive checks), Identity health, and JWKS returned HTTP 200; manual ClamAV and both manual databases were healthy. Manual volumes, files, Compose, keys, and rollback route were retained.
 - The temporary Coolify token was removed. No secret, database URL, credential, reset artifact, or token was recorded in this evidence.
 
+## Native Academic API private-health diagnosis
+
+- This was a non-maintenance, private diagnostic after the before-routing rollback. Manual production remained authoritative; no canonical route, domain, worker, database, runner, mount, application environment, product source, BL-002, firewall, or password-recovery state was changed.
+- The reviewed Academic source SHA remained `5b0ad1f5f8ab0552ed1c502f30840b4afcc13fd8`. Coolify reported Dockerfile build pack, Dockerfile location `/deploy/Dockerfile.api`, internal port `3001`, and the reviewed readiness configuration: `GET /api/v1/health/ready`, interval 30 seconds, timeout 5 seconds, start period 30 seconds, and 3 retries.
+- The private runtime container used image ID `sha256:b23f963adaa3db1da7de567af0b238faec26a54d309026d46ca4a184fd644a3e`, configured image tag `d8dqmfqwp45hkk2hdqodohav:5b0ad1f5f8ab0552ed1c502f30840b4afcc13fd8`, entrypoint `docker-entrypoint.sh`, and CMD `node dist/main.js`. Its exact Docker healthcheck was an internal Node fetch to `http://127.0.0.1:3001/api/v1/health/ready` with the reviewed timing values.
+- The API started at `2026-08-16T03:55:29Z`. It reached `/live=200` and `/ready=200` by `03:55:34Z`, then stayed running, non-OOM, and Docker-healthy. Three final private live/readiness pairs returned 200. Five observed Docker healthcheck executions all exited 0. This is `ACADEMIC_API_FAILURE_CLASS=D` (intermittent/lifecycle failure not reproduced), not a process-start, dependency-readiness, or healthcheck-execution failure.
+- Both required storage mounts were present read-write: `/var/lib/edupay-academico/files` to the identical container path and `/var/lib/edupay-academico/tmp` to the identical container path. The runtime was `node` UID/GID `1000:1000`; both paths existed, were distinct directories, had read/write access for that user, and had owner/mode `1000:1000:0700` on host and container. Capacity was 172,845,555,712 bytes free and 17 percent free, exceeding the configured 1 GiB and 5 percent thresholds. Storage root, temp root, and capacity gates passed.
+- The managed Academic database target was processed only in memory. Its sanitized target was native resource `v5w9hacwtftulf4m46l1rn2g`, port `5432`, database `postgres`. A disposable no-port PostgreSQL 15.19 client on `coolify` connected using the managed credentials with `default_transaction_read_only=on` and `BEGIN TRANSACTION READ ONLY`; `SELECT 1`, `current_database=postgres`, server 15.18, native address `10.0.1.23`, and port 5432 passed. No database write occurred.
+- Native ClamAV was started privately with a 4 GiB limit, no public port, healthy status, and `OOMKilled=false`. From the exact Academic runtime image, the configured ClamAV host resolved on the private Coolify network, accepted TCP/3310, and returned `PONG` to `zPING`; all ClamAV readiness probes passed.
+- The managed Academic environment loaded successfully in the actual reviewed runtime and the application stayed ready; no environment-validation error was logged. The direct compiled-module probe used an incorrect absolute working-directory assumption and was not used as evidence of an application configuration failure.
+- Native Academic API and ClamAV were stopped after the private proof. Native Academic Web, notification, sync, and both migration runners remained stopped/exited. The temporary Coolify token file was removed. Manual Web, Academic live, Academic ready (three consecutive checks), Identity health, JWKS, ClamAV, both manual databases, and exactly one manual notification and sync worker all passed afterward.
+- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS`. No deterministic Academic configuration or runtime defect was found; `NATIVE_ACADEMIC_API_ROOT_CAUSE=OTHER` with sanitized conclusion `previous private unhealthy lifecycle was not reproducible`.
+- Separately, the immutable backup-helper image pinned by both launchers was no longer present in the local Docker image store during this diagnostic. It was not changed or recreated because that is outside this task. A future cutover preflight must restore and re-verify that exact helper availability under separately authorized backup-tooling remediation.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -123,6 +137,16 @@ Final state: `HOLD_PENDING_NATIVE_ACADEMIC_API_PRIVATE_HEALTH_FAILURE_REVIEW`
 - `STRICT_COUNT_RECONCILIATION=PASS`
 - `ROLLBACK_INVOKED=YES`
 - `NATIVE_ACADEMIC_API_PRIVATE_HEALTH=FAIL`
+- `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS`
+- `ACADEMIC_API_FAILURE_CLASS=D`
+- `ACADEMIC_API_DATABASE_READINESS=PASS`
+- `ACADEMIC_STORAGE_ROOT_READINESS=PASS`
+- `ACADEMIC_STORAGE_TEMP_READINESS=PASS`
+- `ACADEMIC_STORAGE_CAPACITY_GATE=PASS`
+- `ACADEMIC_API_CLAMAV_DNS=PASS`
+- `ACADEMIC_API_CLAMAV_TCP=PASS`
+- `ACADEMIC_API_CLAMAV_PONG=PASS`
+- `PG15_BACKUP_HELPER_LOCAL_AVAILABILITY=FAIL`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
