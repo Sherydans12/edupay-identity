@@ -47,14 +47,24 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Assert that the package remains private
+      - name: Verify anonymous digest pull is denied
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          visibility="$(gh api /user/packages/container/edupay-pg15-backup-helper --jq '.visibility')"
-          test "$visibility" = private
-          echo "GHCR_HELPER_VISIBILITY=$visibility"
+          docker logout ghcr.io || true
+          if docker pull "$IMAGE_REFERENCE"; then
+            echo "Anonymous exact-digest pull unexpectedly succeeded." >&2
+            exit 1
+          fi
+          echo "GHCR_HELPER_ANONYMOUS_PULL_DENIED=PASS"
+
+      - name: Re-authenticate to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull and verify the immutable manifest
         env:
@@ -63,6 +73,7 @@ jobs:
           set -euo pipefail
           docker buildx imagetools inspect "$IMAGE_REFERENCE"
           docker pull "$IMAGE_REFERENCE"
+          echo "GHCR_HELPER_AUTHENTICATED_DIGEST_PULL=PASS"
           docker run --rm --entrypoint bash "$IMAGE_REFERENCE" -ceu '
             pg_dump --version | grep -E "^pg_dump \(PostgreSQL\) 15\.19"
             pg_restore --version | grep -E "^pg_restore \(PostgreSQL\) 15\.19"
@@ -73,3 +84,4 @@ jobs:
           echo "GHCR_HELPER_TAG=${IMAGE_NAME}:${{ inputs.version_tag }}"
           echo "GHCR_HELPER_MANIFEST_DIGEST=${{ steps.build.outputs.digest }}"
           echo "GHCR_HELPER_IMMUTABLE_REFERENCE=$IMAGE_REFERENCE"
+          echo "GHCR_HELPER_NONPUBLIC_REGISTRY_GATE=PASS"
