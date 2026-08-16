@@ -4,6 +4,19 @@ Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
 Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 
+## Final native cutover retry authorization — halted before pre-maintenance
+
+- The authorized cutover was halted before any connection to the production host was accepted. The VPS endpoint presented an SSH host key that differs from the pinned `known_hosts` entry already present in the operational workspace for `187.77.250.148`.
+- This is a trusted-host-identity failure: accepting the newly presented key without an independently verified replacement would make it impossible to guarantee that cutover or rollback commands target the authoritative VPS.
+- No maintenance window was entered; no Coolify API action, service start/stop, backup, restore, migration, routing change, worker action, email correction, password-recovery request, or database mutation was performed.
+- Manual production remains authoritative and unchanged. No temporary Coolify-token file was created on the VPS by this attempt.
+- `SSH_ROOT_ACCESS=FAIL_TRUSTED_HOST_KEY_MISMATCH`
+- `MAINTENANCE_ENTERED=NO`
+- `ROUTING_CHANGED=NO`
+- `ROLLBACK_INVOKED=NO`
+- `FINAL_NATIVE_CUTOVER=FAIL`
+- `FINAL_STATE=HOLD_PENDING_VERIFIED_SSH_HOST_KEY`
+
 ## PG15 public GHCR helper remediation — 2026-08-16
 
 Policy decision: `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`. Public visibility is intentional because the helper contains no EduPay application source, credentials, or secrets; its Dockerfile is already reviewed; integrity is enforced by the immutable manifest digest; and anonymous pull removes VPS registry-credential dependency. Public anonymous pull is therefore not a confidentiality failure.
