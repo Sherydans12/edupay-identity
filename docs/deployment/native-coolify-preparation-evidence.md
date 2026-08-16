@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_PG15_BACKUP_HELPER_AVAILABILITY_REMEDIATION`
+Final state: `HOLD_PENDING_GHCR_PACKAGE_VISIBILITY_VERIFICATION`
 
 ## Reviewed Identity runtime
 
@@ -97,6 +97,15 @@ Final state: `HOLD_PENDING_PG15_BACKUP_HELPER_AVAILABILITY_REMEDIATION`
 - Static security regression confirmed both launchers remain `root:root` mode `0700`, the R2 environment file remains `root:root` mode `0600`, neither launcher contains a literal database URL or R2 secret, no public PostgreSQL binding exists, and native workers remain stopped.
 - Manual regression after the investigation passed: Web, live, ready (three consecutive checks), Identity health, JWKS, manual ClamAV, both manual PostgreSQL containers, and the manual notification/sync workers were healthy. Native notification and sync workers remained zero.
 
+## GHCR helper workflow default-branch activation
+
+- The activation branch `ops/activate-pg15-backup-helper` was created directly from reviewed `origin/main` baseline `4a684fac5734d24a553d174cb7c3ae3c615c942a`. It cherry-picked only reviewed source commit `df66d7a80965d12657b6f0b0a71b988c2c1cc57e` as `e0c85b63f35226deb571b7bb32d4b9d5f8fb8d95`.
+- PR #4 contained exactly two added files: `.github/workflows/publish-pg15-backup-helper.yml` and `deploy/backup-helper/Dockerfile`. Its required `validate` check passed; no Identity application source or operational evidence history was included. The PR merged cleanly as main commit `63a177480061f37af3c57ac497a3b57037d2ab82`.
+- The default branch exposes the manual-only workflow with only `contents: read` and `packages: write`; it uses `github.actor` plus `secrets.GITHUB_TOKEN`, not a personal PAT. The helper Dockerfile uses the reviewed immutable PostgreSQL base digest and contains no application source or credentials.
+- Manual dispatch HTTP 204 created workflow run `31926946462` with informational tag `pg15.19-20260816`. GHCR authentication and the build-and-push step passed. The build log recorded pushed manifest digest `sha256:b72c1f16b6d8e6a661f78e1580896b95ef29d2359302ddaff60beeb0f0d2d890` for `ghcr.io/sherydans12/edupay-pg15-backup-helper`.
+- The workflow then failed before immutable pull verification because its private-package assertion exited non-zero when querying the package API with the workflow `GITHUB_TOKEN`. The failure did not expose a token and did not establish package visibility. Per the stop rule, no pull-by-digest verification, VPS registry login, launcher change, backup proof, or production action followed.
+- `PG15_HELPER_WORKFLOW_ON_DEFAULT_BRANCH=PASS`; `GHCR_HELPER_MANIFEST_PUSH=PASS`; `GHCR_HELPER_VISIBILITY=UNVERIFIED`; `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED`.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -161,6 +170,9 @@ Final state: `HOLD_PENDING_PG15_BACKUP_HELPER_AVAILABILITY_REMEDIATION`
 - `PG15_BACKUP_HELPER_IMMUTABILITY=BLOCKED`
 - `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=BLOCKED`
 - `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED`
+- `PG15_HELPER_WORKFLOW_ON_DEFAULT_BRANCH=PASS`
+- `GHCR_HELPER_MANIFEST_PUSH=PASS`
+- `GHCR_HELPER_VISIBILITY=UNVERIFIED`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
