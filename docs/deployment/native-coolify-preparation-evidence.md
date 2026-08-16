@@ -17,6 +17,20 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `FINAL_NATIVE_CUTOVER=FAIL`
 - `FINAL_STATE=HOLD_PENDING_VERIFIED_SSH_HOST_KEY`
 
+## Final native cutover retry — verified SSH, halted at runner-artifact gate
+
+- The VPS presented ED25519, ECDSA, and RSA host-key fingerprints that exactly matched the owner-verified Hostinger-console values. The prior host entries for `187.77.250.148` were replaced only with these verified public keys. `VERIFIED_SSH_HOST_KEY=PASS` and root access passed with an exact pinned host-key verification.
+- Resumed Phase 1 preflight passed: Docker `29.3.1`; Coolify API `4.1.2`; Academic Web/live/three ready responses; Identity health/JWKS; manual ClamAV and both manual databases; manual notification/sync singleton counts; native notification/sync stopped; root-only backup launchers, R2-file permissions, exact public helper digest, and effective PostgreSQL `15.19` clients; and both reviewed native runtime image IDs.
+- Both existing migration-runner Service definitions still reference their required exact reviewed images and remain exited. However, neither configured local image tag nor its required immutable Docker image ID is present in the VPS image store. No local cache source was available for either required ID.
+- The runners were not started, rebuilt, recreated, patched, or substituted. There is no authorized immutable recovery source for the missing exact runner images, so the migration-runner artifact gate cannot be proven safely.
+- No maintenance window was entered; no service, backup, restore, migration, routing, worker, email, or database action was performed. Manual production remains authoritative and unchanged.
+- `MIGRATION_RUNNER_ARTIFACT_GATE=FAIL_MISSING_EXACT_IMAGES`
+- `MAINTENANCE_ENTERED=NO`
+- `ROUTING_CHANGED=NO`
+- `ROLLBACK_INVOKED=NO`
+- `FINAL_NATIVE_CUTOVER=FAIL`
+- `FINAL_STATE=HOLD_PENDING_IMMUTABLE_MIGRATION_RUNNER_ARTIFACT_RECOVERY`
+
 ## PG15 public GHCR helper remediation — 2026-08-16
 
 Policy decision: `GHCR_PUBLIC_BACKUP_HELPER_ACCEPTED=YES`. Public visibility is intentional because the helper contains no EduPay application source, credentials, or secrets; its Dockerfile is already reviewed; integrity is enforced by the immutable manifest digest; and anonymous pull removes VPS registry-credential dependency. Public anonymous pull is therefore not a confidentiality failure.
