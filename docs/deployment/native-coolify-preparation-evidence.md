@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_GHCR_PACKAGE_VISIBILITY_VERIFICATION`
+Final state: `HOLD_PENDING_GHCR_PACKAGE_PRIVACY_REMEDIATION`
 
 ## Reviewed Identity runtime
 
@@ -106,6 +106,13 @@ Final state: `HOLD_PENDING_GHCR_PACKAGE_VISIBILITY_VERIFICATION`
 - The workflow then failed before immutable pull verification because its private-package assertion exited non-zero when querying the package API with the workflow `GITHUB_TOKEN`. The failure did not expose a token and did not establish package visibility. Per the stop rule, no pull-by-digest verification, VPS registry login, launcher change, backup proof, or production action followed.
 - `PG15_HELPER_WORKFLOW_ON_DEFAULT_BRANCH=PASS`; `GHCR_HELPER_MANIFEST_PUSH=PASS`; `GHCR_HELPER_VISIBILITY=UNVERIFIED`; `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED`.
 
+## GHCR registry-access visibility gate remediation
+
+- The failed metadata-API gate in run `31926946462` was replaced only in `.github/workflows/publish-pg15-backup-helper.yml`. The replacement logs out of GHCR, requires anonymous exact-digest pull denial, then re-authenticates with the same scoped workflow `GITHUB_TOKEN` for the authenticated immutable-pull and artifact checks. It does not add permissions, PATs, package-visibility mutations, Dockerfile changes, application source, or evidence history to main.
+- PR #5 contained exactly that one workflow file. Its `validate` check passed and it merged cleanly as main commit `1317606ab3472f4679a30d09b197e080f22441e0`.
+- New manual run `31927308080`, using tag `pg15.19-20260816-r2`, successfully authenticated and pushed manifest `sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`. After explicit `docker logout ghcr.io`, the anonymous exact-digest pull unexpectedly succeeded.
+- This is a fail-closed public-access result: `GHCR_HELPER_VISIBILITY_GATE=FAIL_PUBLIC_ACCESS`. The workflow did not re-authenticate, pull as authenticated, or run the helper artifact checks. No VPS registry login, launcher modification, backup proof, database action, maintenance, routing, worker, or package-visibility mutation occurred.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -173,6 +180,7 @@ Final state: `HOLD_PENDING_GHCR_PACKAGE_VISIBILITY_VERIFICATION`
 - `PG15_HELPER_WORKFLOW_ON_DEFAULT_BRANCH=PASS`
 - `GHCR_HELPER_MANIFEST_PUSH=PASS`
 - `GHCR_HELPER_VISIBILITY=UNVERIFIED`
+- `GHCR_HELPER_VISIBILITY_GATE=FAIL_PUBLIC_ACCESS`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
