@@ -2,7 +2,7 @@
 
 Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 
-Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
+Final state: `HOLD_PENDING_PG15_BACKUP_HELPER_AVAILABILITY_REMEDIATION`
 
 ## Reviewed Identity runtime
 
@@ -86,6 +86,16 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `NATIVE_ACADEMIC_API_PRIVATE_HEALTH_REVIEW=PASS`. No deterministic Academic configuration or runtime defect was found; `NATIVE_ACADEMIC_API_ROOT_CAUSE=OTHER` with sanitized conclusion `previous private unhealthy lifecycle was not reproducible`.
 - Separately, the immutable backup-helper image pinned by both launchers was no longer present in the local Docker image store during this diagnostic. It was not changed or recreated because that is outside this task. A future cutover preflight must restore and re-verify that exact helper availability under separately authorized backup-tooling remediation.
 
+## Durable PostgreSQL 15 backup-helper availability forensics
+
+- This was a non-maintenance operational-tooling investigation. No production database, migration runner, routing, worker, product source, BL-002, firewall, or manual-production process was changed.
+- The former local helper ID `sha256:9363eb01b7fa3f877b50daf236666df0735c45efad5ccc5d5c9e32378fad3311` was absent from Docker image metadata, all tags/digests, stopped containers, and Buildx cache metadata. The old mutable helper tag `postgres15-awscli` was also absent. `OLD_HELPER_IMAGE_LOCAL=NO`, `OLD_HELPER_REFERENCED_BY_CONTAINER=NO`, and `OLD_HELPER_RECOVERABLE_SOURCE_FOUND=NO`.
+- The retained build recipe is understood: `postgres:15-bookworm`, running as root only for `awscli`, `ca-certificates`, and `tar` installation, with `/bin/bash` as the command. Both launchers retain their root-only mode, separate required private networks, mount model, no-port execution, and per-invocation PostgreSQL-major fail-closed assertions.
+- A temporary pull of the recipe's base tag resolved the durable base reference `postgres@sha256:cf7f8fb958c63e62875e30645dc4819ff0243a923f3c709e752b99dedd40bfcd`. That base reported `pg_dump 15.19` and `pg_restore 15.19`. This establishes a suitable immutable base, not a durable helper artifact.
+- No existing helper registry/repository reference or Docker publishing configuration was found. The host Docker configuration has no configured authenticated registry, and the existing GitHub credential lacks package-read scope; no registry namespace or publishing authority was inferred. Path B (new helper) was selected but deliberately stopped before a build because a local-only rebuilt image would not satisfy the required recoverable immutable helper reference.
+- No launchers were changed, no backup proof was run, and no final-cutover authorization claim is valid until an explicitly authorized immutable helper publication/recovery path is provided and fully proven.
+- Manual regression after the investigation passed: Web, live, ready (three consecutive checks), Identity health, JWKS, manual ClamAV, both manual PostgreSQL containers, and the manual notification/sync workers were healthy. Native notification and sync workers remained zero.
+
 ## Gate summary
 
 - `PR3_MERGED=YES`
@@ -147,6 +157,9 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 - `ACADEMIC_API_CLAMAV_TCP=PASS`
 - `ACADEMIC_API_CLAMAV_PONG=PASS`
 - `PG15_BACKUP_HELPER_LOCAL_AVAILABILITY=FAIL`
+- `PG15_BACKUP_HELPER_IMMUTABILITY=BLOCKED`
+- `PG15_HELPER_RECOVERABLE_AFTER_LOCAL_GC=BLOCKED`
+- `PG15_BACKUP_HELPER_REMEDIATION=BLOCKED`
 - `MANUAL_PRODUCTION_UNCHANGED=PASS`
 - `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
 - `MAINTENANCE_ENTERED=NO`
