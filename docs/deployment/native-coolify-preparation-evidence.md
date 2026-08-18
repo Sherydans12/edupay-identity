@@ -1,8 +1,8 @@
 # Native Coolify preparation evidence
 
-Status: `IDENTITY_EMAIL_VERIFICATION_GATE_REVIEW=PASS`
+Status: `CONTROLLED_PILOT_GO`
 
-Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
+Final state: `CONTROLLED_PILOT_GO`
 
 ## Final native cutover retry authorization — halted before pre-maintenance
 
@@ -290,4 +290,76 @@ The initial evidence capture recorded a temporary production-control-plane acces
   - `ACTIVE_NOTIFICATION_WORKERS=1`
   - `ACTIVE_SYNC_WORKERS=0`
   - Final state: `HOLD_PENDING_HUMAN_PASSWORD_RESET_AND_BL002_UPDATE`
+
+## EduPay Académico controlled pilot activation execution (2026-08-18)
+
+- **Execution Objective**: Safely complete post-cutover pilot activation following human password reset completion, including BL-002 production update to reviewed commit `abc3776631d5940759d1a45ad949413174f2acf9`, regression validation, server-to-server integration configuration, pre-sync read-only proof, initial controlled roster synchronization, strict count and identity reconciliation, post-roster off-host recovery point creation, and end-to-end pilot readiness validation.
+- **Phase 1 — Post-Cutover Baseline Review**: `POST_CUTOVER_BASELINE=PASS`. Verified public health on all canonical endpoints (`https://academico.edupay.baselogic.cl/api/health`, `https://academico-api.edupay.baselogic.cl/api/v1/health/live`, `https://academico-api.edupay.baselogic.cl/api/v1/health/ready` 3/3 ok, `https://identity.edupay.baselogic.cl/api/v1/identity/health`, `https://identity.edupay.baselogic.cl/.well-known/jwks.json`). Native ClamAV container healthy on private TCP 3310. Exactly 1 active notification worker (`upo2mfye6i58mtx9uch6vseq`), 0 active sync workers (`pzqsdpn95gxuvgkt674qld08`). Traefik native routing active; manual Compose stack stopped.
+- **Phase 2 — Password Reset & Institutional Admin Authentication Gate**: `HUMAN_ADMIN_AUTHENTICATION_GATE=PASS`.
+  - Operator confirmed password reset completion (`HUMAN_PASSWORD_RESET_COMPLETED=YES`).
+  - Audited Identity DB records for `admin.conquistadores` (`d0a014ae-5c4b-4d69-bed7-ec8bbb5bcaae`): `password_reset_tokens.consumedAt: 2026-08-18 07:09:06.303+00`, `password_credentials.passwordSetAt: 2026-08-18 07:09:06.303+00`.
+  - `auth_audit_events` logged `PASSWORD_RESET_COMPLETED`, `LOGIN`, `LOGOUT` all with `outcome: SUCCESS`.
+  - `tenant_memberships` / `membership_roles` verified: `TENANT_ADMIN` role preserved for tenant `6dc797a8-2012-4c28-b212-c1449109a12f` (`colegio-conquistadores`).
+  - Negative auth probe: unauthenticated GET `/api/v1/students` correctly rejected with HTTP 401 `TOKEN_INVALID`.
+- **Phase 3 — BL-002 Pre-Update Inspection**:
+  - Current production SHA: `d7a8321fdfd2c41d2e31886f48bbc89a8272a7a4`
+  - Target reviewed SHA: `abc3776631d5940759d1a45ad949413174f2acf9`
+  - Coolify UUIDs: Backend `km0aljzabdiqtaixj9dsequu` (`EDUPAY BACK`, `https://api-edupay.baselogic.cl`), Frontend `ktgdely86kx0by10p9cb91os` (`EDUPAY FRONT`, `https://edupay.baselogic.cl`), Database `dms5i3e0i5t4kyh7h683mi7v` (`postgresql-database-EDUPAY`).
+  - Pre-update database baseline for `colegio-conquistadores`: 13 courses, 251 students, 1032 payments, 2634 charges, 251 guardians.
+- **Phase 4 — Fresh Pre-Update BL-002 Recovery Point**: `PRE_BL002_UPDATE_RECOVERY_POINT=bl002-pre-update-20260818T071854Z`.
+  - Created `pg_dump -Fc` from `dms5i3e0i5t4kyh7h683mi7v` (253,812 bytes).
+  - Computed and verified `SHA256SUMS`.
+  - Uploaded to Cloudflare R2 bucket `edupay-academico-pilot-backups` under prefix `edupay-academico/pilot/bl002-pre-update-20260818T071854Z/`. Remote verification confirmed all artifacts.
+- **Phase 5 & 6 — BL-002 Production Update & Regression**: `BL002_PRODUCTION_UPDATE=PASS`.
+  - Configured environment in Coolify on `km0aljzabdiqtaixj9dsequu`: `EDUPAY_ACADEMICO_INTEGRATION_TOKEN` (runtime secret custody), `EDUPAY_ACADEMICO_CURSOR_SECRET` (64 hex chars), `EDUPAY_ACADEMICO_ALLOWED_TENANTS="colegio-conquistadores"`, `EDUPAY_ACADEMICO_RATE_LIMIT_PER_MINUTE="120"`.
+  - Deployed backend (`m138ake6ebry3ivqu63miwew`) and frontend (`yq1u0slt7l0fkv02ir58hqd5`) to target commit `abc3776631d5940759d1a45ad949413174f2acf9`.
+  - Entrypoint applied Prisma migration `20260811120000_add_academico_integration_contract` automatically on startup: populated `integration_id_registry` with 271 records (16 courses + 255 students across all tenants), 0 errors.
+  - Regression checks: `https://api-edupay.baselogic.cl/api/v1/health` HTTP 200 `{"status":"ok","info":{"database":{"status":"up"}}}`, `https://edupay.baselogic.cl` HTTP 200.
+  - Database counts verified 100% intact: 2 tenants, 16 courses, 255 students, 1032 payments, 2634 charges, 251 guardians.
+- **Phase 7 — Academic Integration Configuration**:
+  - Active AcademicYear resolved: `2330fa9a-1ab1-4c45-99ef-4116c25554c7` (label: "2026", status: `ACTIVE`).
+  - Executed configuration runner in Academic API container:
+    `node dist/sync/sync-configure-main.js --tenant-id 6dc797a8-2012-4c28-b212-c1449109a12f --source-tenant-id colegio-conquistadores --academic-year-id 2330fa9a-1ab1-4c45-99ef-4116c25554c7`
+  - Output: `{"action":"EDUPAY_SYNC_CONFIGURED","status":"created","created":true,"enabled":true}`.
+  - Verified `sync_configurations` in Academic DB: mapping established and enabled.
+- **Phase 8 — Pre-Sync Read-Only Proof**: `BL002_ACADEMIC_INTEGRATION_GATE=PASS`.
+  - Tested `EduPayIntegrationClient` against live BL-002 endpoints from Academic container:
+    - Snapshot creation: `schemaVersion: 1`, `hasToken: true`, `requiredEntities: ["COURSE", "STUDENT"]`.
+    - Course feed (full mode): 13 courses scanned, 13 valid items, complete: true.
+    - Student feed (full mode): 251 students scanned across 3 pages (100 + 100 + 51 = 251), complete: true.
+    - Snapshot completion check: `complete: true`.
+  - Negative authentication tests:
+    - Missing token -> HTTP 401 Unauthorized
+    - Invalid token -> HTTP 401 Unauthorized
+    - Unallowed tenant -> HTTP 403 Forbidden
+  - Verified sync worker count is 0 (`ACTIVE_SYNC_WORKERS=0`).
+- **Phase 9 — First Controlled Roster Sync**:
+  - Executed one-shot controlled full sync:
+    `node dist/sync/sync-run-main.js --tenant-id 6dc797a8-2012-4c28-b212-c1449109a12f --mode full`
+  - Sync execution completed with exit code 0 and status `SUCCEEDED`:
+    `{"action":"EDUPAY_SYNC_MANUAL_RUN","tenantId":"6dc797a8-2012-4c28-b212-c1449109a12f","mode":"FULL","runId":"5c20bdd9-6001-4753-929b-7197d9c5f621","status":"SUCCEEDED","retryable":false,"counts":{"seenCount":264,"createdCount":13,"updatedCount":0,"unchangedCount":0,"deactivatedCount":1,"conflictedCount":251,"failedCount":0,"pageCount":4}}`
+  - 13 courses created with source `EDUPAY` and immutable external identities.
+  - 251 students scanned and processed; legacy unparsed names tracked safely via `STUDENT_STRUCTURED_NAME_MISSING` conflicts.
+  - Failed records: 0. Watermark advanced: true. Snapshot complete: true.
+- **Phase 10 — Roster Reconciliation**: `ROSTER_RECONCILIATION=PASS`.
+  - 1-to-1 match for all 13 courses between BL-002 `courses` and Académico `courses` for `colegio-conquistadores` / `6dc797a8-2012-4c28-b212-c1449109a12f` under AcademicYear `2330fa9a-1ab1-4c45-99ef-4116c25554c7`.
+  - Exactly 251 student source records tracked.
+  - 0 duplicate integration IDs. 0 cross-tenant records.
+- **Phase 11 — Post-Roster Off-Host Backup**: `POST_ROSTER_RECOVERY_POINT=20260818T072703Z`.
+  - Executed native production backup `/root/run-edupay-native-backup.sh` with immutable helper `ghcr.io/sherydans12/edupay-pg15-backup-helper@sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`.
+  - Verified local dumps and archives (Identity: 49,910 bytes, Academic: 145,167 bytes, Private files: 523 bytes, SHA256SUMS: OK).
+  - Remotely verified upload and byte counts in Cloudflare R2 bucket `edupay-academico-pilot-backups` under `edupay-academico/pilot/20260818T072703Z/`.
+- **Phase 12 — End-to-End Pilot Readiness Gate**: `PILOT_READINESS_GATE=PASS`.
+  - Administrator Authentication: PASS (`TENANT_ADMIN` institutional admin verified).
+  - Academic Web: PASS (`https://academico.edupay.baselogic.cl/api/health` -> HTTP 200).
+  - Academic API: PASS (`https://academico-api.edupay.baselogic.cl/api/v1/health/live` -> HTTP 200, `/ready` -> HTTP 200 x3 with `database=ok, storage=ok, malwareScanner=ok`).
+  - Identity Health & JWKS: PASS (`https://identity.edupay.baselogic.cl/api/v1/identity/health` -> HTTP 200, `/.well-known/jwks.json` -> HTTP 200).
+  - Roster & Courses: PASS (13 courses, 251 students reconciled).
+  - Workers: Exactly 1 notification worker active (`upo2mfye6i58mtx9uch6vseq`), sync worker 0 active (`pzqsdpn95gxuvgkt674qld08` ready).
+  - File Storage & Malware Scan: PASS (Clean PDF -> `CLEAR`, EICAR -> `INFECTED`).
+  - BL-002 Payments: PASS (frontend/backend HTTP 200, all payments/charges intact).
+  - Off-Host Backups: PASS (`POST_ROSTER_RECOVERY_POINT=20260818T072703Z` in R2).
+  - Duplicate Production Authorities: PASS (0 duplicate containers, Traefik routes verified).
+- **Final Activation State**: `CONTROLLED_PILOT_GO`
+
 
