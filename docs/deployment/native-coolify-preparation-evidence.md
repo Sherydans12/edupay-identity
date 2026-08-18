@@ -362,4 +362,79 @@ The initial evidence capture recorded a temporary production-control-plane acces
   - Duplicate Production Authorities: PASS (0 duplicate containers, Traefik routes verified).
 - **Final Activation State**: `CONTROLLED_PILOT_GO`
 
+## EduPay legacy BL-002 student structured-name backfill & controlled pilot revalidation (2026-08-18)
+
+- **Execution Objective**: Safely automate the derivation and backfill of structured `firstName` and `lastName` fields for legacy Colegio Conquistadores students in BL-002 (`dms5i3e0i5t4kyh7h683mi7v`), preserve original legacy `name` fields untouched, resynchronize EduPay Académico, reconcile the real student roster in Académico database (`v5w9hacwtftulf4m46l1rn2g`), create off-host backup recovery points on Cloudflare R2, and restore a truthful pilot-readiness verdict.
+- **Phase 1 — Deterministic Name Parser Implementation**:
+  - Implemented pure TypeScript parser in `backend/src/students/student-name-parser.ts` with compound surname particle handling (`DE LA`, `DE LAS`, `DE LOS`, `DEL`, `DE`, `LA`, `LAS`, `LOS`, `SAN`, `SANTA`) and dataset-local frequency lexicon scoring for ambiguous 3-token records.
+  - Implemented 15 comprehensive unit test cases in `backend/src/students/student-name-parser.spec.ts` covering 4-token, 2-token, 5-token, compound particles, single token unresolved, blank source, idempotency, and strict token invariant checks.
+  - Full test suite passed (26 test suites, 116 tests). Linter passed with 0 errors.
+  - Implemented operator script `backend/scripts/backfill-student-structured-names.ts` supporting `--dry-run`, `--apply`, and `--tenant`.
+  - Pushed to BL-002 `main` repository (commits `3c0fddd`, `cb02b82`, `7f54d50`, `c26fc90`).
+- **Phase 2 — Production Dry Run**: `STUDENT_NAME_BACKFILL_DRY_RUN=PASS`.
+  - Executed inside BL-002 backend container `km0aljzabdiqtaixj9dsequu-140653948469` on production VPS:
+    - `totalEligible`: 251
+    - `tokenHistogram`: { 2: 4, 3: 49, 4: 189, 5: 9 }
+    - `confidenceCounts`:
+      - `HIGH_CONFIDENCE`: 202
+      - `CORPUS_RESOLVED`: 37
+      - `UNRESOLVED_AMBIGUOUS`: 12
+      - `UNRESOLVED_SINGLE_TOKEN`: 0
+      - `ALREADY_STRUCTURED`: 0
+      - `INVALID_SOURCE`: 0
+    - `invariantFailures`: 0 (`invariantsPass: true`)
+    - `predictedIntegrationReady`: 239 (95.2% coverage)
+    - `predictedRemainingConflict`: 12 (4.8% remaining ambiguous records, fail-closed without guessing)
+- **Phase 3 — Pre-Backfill Backup**: `PRE_STUDENT_NAME_BACKFILL_RECOVERY_POINT=pre_student_name_backfill_20260818_140953Z`.
+  - Created standalone `pg_dump -Fc` from `dms5i3e0i5t4kyh7h683mi7v` (275,639 bytes).
+  - Checksum computed (`SHA256: bd37601c34dc9ade69eabdadadf0e3100861b7fcc1b6df8c525ae204cf931319`).
+  - Verified archive integrity with `pg_restore --list`.
+  - Uploaded and remotely verified on Cloudflare R2 bucket `edupay-academico-pilot-backups` under `edupay-academico/pilot/pre_student_name_backfill_20260818_140953Z/`.
+- **Phase 4 — Apply**: `STUDENT_STRUCTURED_NAME_BACKFILL=PASS`.
+  - Executed `node dist/scripts/backfill-student-structured-names.js --apply --tenant colegio-conquistadores`.
+  - Applied 239 student structured name records in a single database transaction.
+  - PostgreSQL trigger `students_academico_integration_sync` naturally advanced `integrationVersion` up to `785`.
+  - Invariants verified: `total_students: 251`, `structured_students: 239`, `unstructured_students: 12`, original `name` untouched.
+- **Phase 5 — BL-002 Regression**:
+  - Frontend HTTP 200 (redirect 307 -> 200 on follow).
+  - Backend health HTTP 200 (`{"status":"ok","info":{"database":{"status":"up"}}}`).
+  - Database entity counts preserved: 13 courses, 251 students, 248 guardians, 1026 payments, 2619 charges.
+- **Phase 6 — Feed Verification**: `STRUCTURED_STUDENT_FEED_GATE=PASS`.
+  - Queried `GET /api/v1/integrations/academico/students?mode=incremental&schemaVersion=1&limit=500` with `X-Source-Tenant-ID: colegio-conquistadores`.
+  - Valid student items returned: 239.
+  - Remaining conflicts returned: 12 (`STUDENT_STRUCTURED_NAME_MISSING: 12`).
+  - `hasMore`: false.
+- **Phase 7 — Controlled Full Resync**:
+  - Executed `node dist/sync/sync-run-main.js --tenant-id 6dc797a8-2012-4c28-b212-c1449109a12f --mode full` inside Academic API container `d8dqmfqwp45hkk2hdqodohav-064725515683`.
+  - Result: `status: SUCCEEDED`, `seenCount: 264`, `createdCount: 239`, `unchangedCount: 13`, `conflictedCount: 12`, `failedCount: 0`, `pageCount: 4`, `snapshotComplete: true`, `watermarkAdvanced: true`.
+  - Run ID: `3ad11a98-c9db-468c-8ad4-0cf7934b91f7`.
+- **Phase 8 — Academic Roster Reconciliation**: `ACADEMIC_STUDENT_ROSTER_RECONCILIATION=PASS`.
+  - Academic DB (`v5w9hacwtftulf4m46l1rn2g`):
+    - `total_academic_students`: 240 (239 `EDUPAY` + 1 `MANUAL` test student)
+    - `edupay_students`: 239
+    - `valid_structured_students`: 240 (100% of created students have valid firstName and lastName)
+    - `active_students`: 229 (plus 10 soft-deleted from source correctly marked inactive)
+    - `total_enrollments`: 230 (229 active EDUPAY enrollments across all 13 courses)
+    - `distinct_courses_with_enrollments`: 13 (all 13 courses have active student enrollments)
+    - `sync_item_results`: exactly 12 tracked `STUDENT_STRUCTURED_NAME_MISSING` conflicts for run `3ad11a98-c9db-468c-8ad4-0cf7934b91f7`.
+  - Reconciled metrics:
+    - `SOURCE_RECORDS_TRACKED`: 251
+    - `BL002_STRUCTURED_STUDENTS`: 239
+    - `ACADEMIC_STUDENTS_CREATED`: 239
+    - `REMAINING_SOURCE_CONFLICTS`: 12
+- **Phase 9 — Post-Backfill Backup**: `POST_STUDENT_NAME_BACKFILL_RECOVERY_POINT=20260818T141255Z`.
+  - Executed `/root/run-edupay-native-backup.sh` with immutable helper `ghcr.io/sherydans12/edupay-pg15-backup-helper@sha256:78016dcfcec425b1649c23cc60fcca01abd4dc63e97f79d33425d339fde39b6f`.
+  - Verified local dumps and archives (`academico.postgres.dump`: 189,451 bytes, `identity.postgres.dump`: 49,910 bytes, `academico-private-files.tar.gz`: 523 bytes).
+  - Remotely verified upload and byte counts in Cloudflare R2 bucket `edupay-academico-pilot-backups` under `edupay-academico/pilot/20260818T141255Z/`.
+- **Phase 10 — Final Pilot Readiness**: `PILOT_STUDENT_ROSTER_GATE=PASS`.
+  - Academic Web: PASS (`https://academico.edupay.baselogic.cl/login` -> HTTP 200).
+  - Academic API: PASS (`https://academico-api.edupay.baselogic.cl/api/v1/health/ready` -> HTTP 200 `checks: database=ok, storage=ok, malwareScanner=ok`).
+  - Identity & JWKS: PASS (`https://identity.edupay.baselogic.cl/.well-known/jwks.json` -> HTTP 200).
+  - BL-002 Platform: PASS (frontend HTTP 200, backend health HTTP 200).
+  - Workers: Exactly 1 notification worker active (`qf65r4ltig6jhb6t8dmv2qyw`), sync worker 0 active (`ACTIVE_NOTIFICATION_WORKERS=1`, `ACTIVE_SYNC_WORKERS=0`).
+  - Malware Scanner: PASS (ClamAV container healthy on private TCP 3310).
+  - Off-Host Backups: PASS (`POST_STUDENT_NAME_BACKFILL_RECOVERY_POINT=20260818T141255Z` verified in R2).
+- **Final Pilot State**: `CONTROLLED_PILOT_GO`
+
+
 
