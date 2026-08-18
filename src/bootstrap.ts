@@ -30,7 +30,7 @@ export function configureApplication(app: INestApplication): void {
       callback(null, normalizedOrigin && trustedOrigins.has(normalizedOrigin) ? origin : false);
     },
     credentials: true,
-    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Accept',
       'Content-Type',

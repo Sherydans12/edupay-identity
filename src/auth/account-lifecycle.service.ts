@@ -459,11 +459,15 @@ export class AccountLifecycleService {
           expiresAt,
         },
       });
+      const usernameIdentifier = membership.user.loginIdentifiers.find(
+        ({ kind, tenantRealmId: realmId }) => kind === LoginIdentifierKind.USERNAME && realmId === tenantId,
+      )?.normalizedValue;
+
       await this.emailOutbox.createIntent(transaction, {
         deliveryKey: `invitation:${invitation.id}`,
         eventType: 'identity.email.invitation.v1',
         aggregateId: invitation.id,
-        message: createInvitationEmail(this.config, emailIdentifier.normalizedValue, plaintext),
+        message: createInvitationEmail(this.config, emailIdentifier.normalizedValue, plaintext, usernameIdentifier),
       });
       await this.createOutboxEvent(transaction, 'identity.invitation.created.v1', invitation.id, {
         invitationId: invitation.id,
