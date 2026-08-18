@@ -434,7 +434,49 @@ The initial evidence capture recorded a temporary production-control-plane acces
   - Workers: Exactly 1 notification worker active (`qf65r4ltig6jhb6t8dmv2qyw`), sync worker 0 active (`ACTIVE_NOTIFICATION_WORKERS=1`, `ACTIVE_SYNC_WORKERS=0`).
   - Malware Scanner: PASS (ClamAV container healthy on private TCP 3310).
   - Off-Host Backups: PASS (`POST_STUDENT_NAME_BACKFILL_RECOVERY_POINT=20260818T141255Z` verified in R2).
-- **Final Pilot State**: `CONTROLLED_PILOT_GO`
+## EduPay controlled pilot operational consistency reconciliation & onboarding readiness (2026-08-18)
+
+- **Execution Objective**: Reconcile worker identities, explain historical financial count query semantics, prove financial integrity via disposable PostgreSQL 18 restoration and ID comparison, reconcile active enrollment counts, establish automated daily off-host backup scheduling, and verify onboarding infrastructure for the first real pilot users.
+- **Phase 1 — Live Production Baseline**: `CURRENT_PRODUCTION_BASELINE=PASS`.
+  - All canonical endpoints verified returning HTTP 200: Academic Web login (`https://academico.edupay.baselogic.cl/login`), Academic API live & ready (`https://academico-api.edupay.baselogic.cl/api/v1/health/live`, `/ready`), Identity JWKS (`https://identity.edupay.baselogic.cl/.well-known/jwks.json`), BL-002 frontend & backend health (`https://edupay.baselogic.cl`, `https://api-edupay.baselogic.cl/api/v1/health`).
+  - ClamAV container `ttrrmrkod9hmqo68er6q2ghs-062547280608` healthy on private TCP 3310.
+  - PostgreSQL instances `v5w9hacwtftulf4m46l1rn2g`, `bluypktxta8uisbrfzu6p9pw`, and `dms5i3e0i5t4kyh7h683mi7v` healthy.
+  - Zero duplicate manual Compose or legacy processes running.
+- **Phase 2 — Worker Identity Correction**: `NOTIFICATION_WORKER_IDENTITY_VERIFIED=PASS`.
+  - Audited Coolify resources and live Docker process trees:
+    - **Academic Web**: UUID `qf65r4ltig6jhb6t8dmv2qyw` (Container `qf65r4ltig6jhb6t8dmv2qyw-070533710840`, running Next.js `next-server`).
+    - **Academic API**: UUID `d8dqmfqwp45hkk2hdqodohav` (Container `d8dqmfqwp45hkk2hdqodohav-064725515683`, running NestJS Academic API).
+    - **Notification Worker**: UUID `upo2mfye6i58mtx9uch6vseq` (Container `upo2mfye6i58mtx9uch6vseq-062004756702`, running NestJS Notification Worker).
+    - **Sync Worker**: UUID `pzqsdpn95gxuvgkt674qld08` (Stopped / 0 replicas).
+  - Clarification: The prior report mistakenly referenced the Web UUID `qf65r4ltig6jhb6t8dmv2qyw` in the worker summary line; the actual running notification worker container is `upo2mfye6i58mtx9uch6vseq-062004756702` (`ACTIVE_NOTIFICATION_WORKERS=1`, `ACTIVE_SYNC_WORKERS=0`).
+- **Phase 3 & 4 — Financial Count Semantics & Disposable Historical Comparison**: `BL002_FINANCIAL_INTEGRITY_GATE=PASS`.
+  - Discrepancy Classification: `BL002_FINANCIAL_COUNT_DISCREPANCY_CLASS=REPORT_QUERY_SEMANTICS`.
+  - Historical pre-update counts (251 guardians, 1032 payments, 2634 charges, 255 students, 16 courses) represented **global database totals across all tenants** (including demo tenant `colegio-pruebas`).
+  - Tenant-scoped counts for `colegio-conquistadores` are: 248 guardians (241 active, 7 soft-deleted), 1026 payments (971 active, 55 soft-deleted), 2619 charges (889 pending, 863 paid, 865 overdue, 2 soft-deleted), 251 students, 13 courses.
+  - Verified by restoring historical backup `bl002-pre-update-20260818T071854Z` into a disposable PostgreSQL 18 instance:
+    - Payments ID diff: 0 additions, 0 deletions.
+    - Charges ID diff: 0 additions, 0 deletions.
+    - Guardians ID diff: 0 additions, 0 deletions.
+    - Monetary sums identical: Payments = $223,528,444 CLP, Charges = $558,885,400 CLP ($183,126,544 CLP paid).
+- **Phase 5 — Academic Student Status & Enrollment Reconciliation**: `ACADEMIC_STUDENT_STATUS_RECONCILIATION=PASS`.
+  - BL-002 source students (`colegio-conquistadores`): 251 total.
+    - 229 structured, active, in active courses -> synchronized as `ACTIVE` in Académico.
+    - 10 structured, soft-deleted -> synchronized as `INACTIVE` in Académico (tombstones preserved).
+    - 12 unparsed ambiguous records -> tracked as conflicts (`STUDENT_STRUCTURED_NAME_MISSING: 12`).
+  - Academic DB: 239 `EDUPAY` students (229 `ACTIVE`, 10 `INACTIVE`) + 1 `MANUAL` student (`INACTIVE`) = 240 total.
+  - Active enrollments: exactly 229 active EDUPAY enrollments mapped across all 13 courses + 1 manual enrollment = 230 total.
+- **Phase 6 — Unresolved Students Backlog**: `LEGACY_NAME_REVIEW_BACKLOG=12`.
+  - 12 ambiguous legacy names kept fail-closed and tracked in `sync_item_results` without exposing PII.
+- **Phase 7 — Automated Daily Backup Schedule**: `DAILY_BACKUP_SCHEDULE_GATE=PASS`.
+  - Configured and enabled native systemd timer `/etc/systemd/system/edupay-backup.timer` and service `/etc/systemd/system/edupay-backup.service`.
+  - Schedule: Daily at 03:00 UTC with persistent trigger and randomized delay.
+  - Test run executed: exit code 0, verified dumps, and confirmed Cloudflare R2 upload (`20260818T142415Z`).
+- **Phase 8, 9 & 10 — Pilot User Provisioning Infrastructure**: `PILOT_USER_PROVISIONING_INFRASTRUCTURE=PASS`.
+  - Verified Identity membership provisioning (`POST /api/v1/tenants/:tenantId/memberships`).
+  - Verified Academic Teacher creation (`POST /api/v1/teachers`), Identity linkage (`PUT /api/v1/teachers/:id/identity-link`), and CourseSubject assignment (`POST /api/v1/course-subject-teachers`).
+  - Verified Student Identity linkage (`PUT /api/v1/students/:id/identity-link`) for synchronized students.
+- **Final Pilot State**: `HOLD_PENDING_REAL_PILOT_IDENTITIES_AND_SUBJECT_ASSIGNMENTS`
+
 
 
 
