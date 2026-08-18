@@ -19,7 +19,16 @@ export class MembershipController {
     @Body() input: CreateMembershipDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<Record<string, unknown>> {
-    return this.lifecycle.provisionMembership(request.auth, tenantId, input, request.requestId);
+    const idempotencyKey = typeof request.headers['idempotency-key'] === 'string'
+      ? request.headers['idempotency-key']
+      : undefined;
+    return this.lifecycle.provisionMembership(
+      request.auth,
+      tenantId,
+      input,
+      request.requestId,
+      idempotencyKey,
+    );
   }
 
   @Patch(':membershipId')

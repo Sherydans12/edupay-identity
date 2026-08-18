@@ -164,11 +164,32 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
       .send({ userId: first.body.userId, institutionalUsername: 'second.username', roles: [RoleCode.STUDENT] })
       .expect(409);
 
+    // Exact idempotent replay returns same membership without creating duplicate rows
+    const userCountBefore = await prisma.identityUser.count();
+    const membershipCountBefore = await prisma.tenantMembership.count();
+    const replay = await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'replay-test-key-1')
+      .send({ institutionalUsername: 'SHARED.STUDENT', roles: [RoleCode.STUDENT] })
+      .expect(201);
+    expect(replay.body).toMatchObject({
+      userId: first.body.userId,
+      membershipId: first.body.membershipId,
+      institutionalUsername: 'shared.student',
+      status: MembershipStatus.PENDING_ACTIVATION,
+      roles: [RoleCode.STUDENT],
+    });
+    expect(await prisma.identityUser.count()).toBe(userCountBefore);
+    expect(await prisma.tenantMembership.count()).toBe(membershipCountBefore);
+
+    // Conflicting replay with changed role returns 409 Conflict
     await request(app.getHttpServer())
       .post(`/api/v1/tenants/${tenantA.id}/memberships`)
       .set('Authorization', `Bearer ${admin.accessToken}`)
-      .send({ institutionalUsername: 'SHARED.STUDENT', roles: [RoleCode.STUDENT] })
+      .send({ institutionalUsername: 'SHARED.STUDENT', roles: [RoleCode.TEACHER] })
       .expect(409);
+
     await request(app.getHttpServer())
       .post(`/api/v1/tenants/${tenantA.id}/memberships`)
       .set('Authorization', `Bearer ${admin.accessToken}`)

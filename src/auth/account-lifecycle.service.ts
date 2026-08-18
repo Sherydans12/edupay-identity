@@ -77,6 +77,7 @@ export class AccountLifecycleService {
     tenantId: string,
     input: CreateMembershipDto,
     requestId: string,
+    idempotencyKey?: string,
   ): Promise<Record<string, unknown>> {
     this.assertTenantAdmin(principal, tenantId);
     this.assertManagedRoles(input.roles);
@@ -88,6 +89,62 @@ export class AccountLifecycleService {
     return this.prisma.$transaction(async (transaction) => {
       const tenant = await transaction.tenantRealm.findUnique({ where: { id: tenantId } });
       if (!tenant || tenant.status !== TenantRealmStatus.ACTIVE) this.notFound();
+
+      const existingUsername = await transaction.loginIdentifier.findFirst({
+        where: {
+          tenantRealmId: tenantId,
+          kind: LoginIdentifierKind.USERNAME,
+          normalizedValue: username,
+        },
+        select: { userId: true },
+      });
+
+      if (existingUsername) {
+        const existingMembership = await transaction.tenantMembership.findUnique({
+          where: { userId_tenantRealmId: { userId: existingUsername.userId, tenantRealmId: tenantId } },
+          include: {
+            roles: { include: { role: true } },
+            user: {
+              include: {
+                loginIdentifiers: {
+                  where: { kind: LoginIdentifierKind.EMAIL },
+                },
+              },
+            },
+          },
+        });
+
+        if (existingMembership && existingMembership.status === MembershipStatus.PENDING_ACTIVATION) {
+          const existingRoles = existingMembership.roles.map((r) => r.role.code).sort();
+          const requestedRoles = [...input.roles].sort();
+          const rolesMatch =
+            existingRoles.length === requestedRoles.length &&
+            existingRoles.every((role, index) => role === requestedRoles[index]);
+
+          const userEmailIdentifier = existingMembership.user.loginIdentifiers[0]?.normalizedValue;
+          const emailMatch =
+            (!email && !userEmailIdentifier) || (Boolean(email) && userEmailIdentifier === email);
+          const userMatch = !input.userId || input.userId === existingUsername.userId;
+
+          if (rolesMatch && emailMatch && userMatch) {
+            return {
+              userId: existingMembership.userId,
+              membershipId: existingMembership.id,
+              tenantId,
+              institutionalUsername: username,
+              ...(email ? { email } : {}),
+              status: existingMembership.status,
+              roles: existingRoles,
+              activation: {
+                emailInvitationAvailable: Boolean(email),
+                activationChallengeAvailable: !email,
+              },
+            };
+          }
+        }
+
+        this.conflict('The requested membership cannot be created.');
+      }
 
       let user = input.userId
         ? await transaction.identityUser.findUnique({ where: { id: input.userId } })
@@ -115,18 +172,6 @@ export class AccountLifecycleService {
         where: { userId_tenantRealmId: { userId: user.id, tenantRealmId: tenantId } },
       });
       if (existingMembership) this.conflict('The requested membership cannot be created.');
-
-      const existingUsername = await transaction.loginIdentifier.findFirst({
-        where: {
-          tenantRealmId: tenantId,
-          kind: LoginIdentifierKind.USERNAME,
-          normalizedValue: username,
-        },
-        select: { userId: true },
-      });
-      if (existingUsername && existingUsername.userId !== user.id) {
-        this.conflict('The requested membership cannot be created.');
-      }
 
       if (email) {
         const existingEmail = await transaction.loginIdentifier.findFirst({
@@ -190,7 +235,11 @@ export class AccountLifecycleService {
           actorUserId: principal.userId,
           tenantRealmId: tenantId,
           requestId,
-          metadata: { membershipId: membership.id, roles: [...input.roles].sort() },
+          metadata: {
+            membershipId: membership.id,
+            roles: [...input.roles].sort(),
+            ...(idempotencyKey ? { idempotencyKey } : {}),
+          },
         },
       });
 
