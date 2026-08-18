@@ -11,7 +11,12 @@ export function configureApplication(app: INestApplication): void {
   const config = app.get(ConfigService<Environment, true>);
   const trustedOrigins = new Set(config.getOrThrow('IDENTITY_TRUSTED_WEB_ORIGINS'));
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    }),
+  );
   app.enableCors({
     origin: (
       origin: string | undefined,
