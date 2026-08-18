@@ -424,7 +424,6 @@ export class AccountLifecycleService {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     this.assertTenantAdmin(principal, tenantId);
-    this.assertRecentAuthentication(principal);
     await this.assertRateLimit('management', [principal.userId, tenantId, membershipId]);
 
     const issued = await this.opaqueTokens.issue('inv');
@@ -593,7 +592,6 @@ export class AccountLifecycleService {
     sourceAddress: string,
   ): Promise<Record<string, unknown>> {
     this.assertTenantAdmin(principal, tenantId);
-    this.assertRecentAuthentication(principal);
     await this.assertRateLimit('activation', [sourceAddress, principal.userId, membershipId]);
     const issued = await this.opaqueTokens.issue('act');
     const activationCode = issued.revealOnce();

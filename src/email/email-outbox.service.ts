@@ -1,5 +1,15 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from 'node:crypto';
+import {
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '../generated/prisma/client.js';
 import { OutboxStatus } from '../generated/prisma/enums.js';
@@ -84,10 +94,14 @@ class EmailPayloadProtector {
 }
 
 @Injectable()
-export class EmailOutboxService {
+export class EmailOutboxService
+  implements OnApplicationBootstrap, OnApplicationShutdown
+{
+  private readonly logger = new Logger(EmailOutboxService.name);
   private readonly protector: EmailPayloadProtector;
   private readonly maxAttempts: number;
   private readonly baseBackoffSeconds: number;
+  private timer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -99,11 +113,23 @@ export class EmailOutboxService {
     this.baseBackoffSeconds = config.getOrThrow('OUTBOX_BASE_BACKOFF_SECONDS');
   }
 
-  createIntent(
+  async onApplicationBootstrap(): Promise<void> {
+    await this.deliverPending().catch(() => {});
+    this.timer = setInterval(() => {
+      void this.deliverPending().catch(() => {});
+    }, 5_000);
+    this.timer.unref();
+  }
+
+  onApplicationShutdown(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  async createIntent(
     client: Prisma.TransactionClient,
     intent: EmailIntent,
   ): Promise<unknown> {
-    return client.outboxEvent.create({
+    const created = await client.outboxEvent.create({
       data: {
         eventType: intent.eventType,
         aggregateType: 'IdentityEmail',
@@ -116,6 +142,10 @@ export class EmailOutboxService {
         } as unknown as Prisma.InputJsonObject,
       },
     });
+    setImmediate(() => {
+      void this.deliverPending().catch(() => {});
+    });
+    return created;
   }
 
   async deliverPending(limit = 20): Promise<{ published: number; failed: number }> {
