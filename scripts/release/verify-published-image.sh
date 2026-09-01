@@ -14,14 +14,32 @@ fi
 
 immutable_reference="$IMAGE@$IMAGE_DIGEST"
 manifest_file="$(mktemp)"
-trap 'rm -f "$manifest_file"' EXIT
+attestation_file="$(mktemp)"
+trap 'rm -f "$manifest_file" "$attestation_file"' EXIT
 
 docker buildx imagetools inspect "$immutable_reference"
 docker buildx imagetools inspect --raw "$immutable_reference" >"$manifest_file"
 
-attestation_count="$(jq '[.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")] | length' "$manifest_file")"
-if (( attestation_count < 2 )); then
-  printf 'Expected separate SBOM and provenance attestations; found %s\n' "$attestation_count" >&2
+attestation_count="$(jq '[.manifests[]? | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")] | length' "$manifest_file")"
+if (( attestation_count < 1 )); then
+  printf 'Expected an OCI attestation manifest; found %s\n' "$attestation_count" >&2
+  exit 1
+fi
+
+sbom_predicate=0
+provenance_predicate=0
+while IFS= read -r attestation_digest; do
+  docker buildx imagetools inspect --raw "$IMAGE@$attestation_digest" >"$attestation_file"
+  if jq -e '[.layers[]? | .annotations["in-toto.io/predicate-type"]? | select(type == "string" and startswith("https://spdx.dev/"))] | length > 0' "$attestation_file" >/dev/null; then
+    sbom_predicate=1
+  fi
+  if jq -e '[.layers[]? | .annotations["in-toto.io/predicate-type"]? | select(type == "string" and startswith("https://slsa.dev/provenance/"))] | length > 0' "$attestation_file" >/dev/null; then
+    provenance_predicate=1
+  fi
+done < <(jq -r '.manifests[]? | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") | .digest' "$manifest_file")
+
+if (( sbom_predicate != 1 || provenance_predicate != 1 )); then
+  printf 'Expected SPDX SBOM and SLSA provenance predicates in OCI attestations\n' >&2
   exit 1
 fi
 
@@ -34,4 +52,4 @@ test "$(docker inspect "$immutable_reference" --format '{{json .Config.Cmd}}')" 
 printf 'IMMUTABLE_REFERENCE=%s\n' "$immutable_reference"
 printf 'IMAGE_DIGEST=%s\n' "$IMAGE_DIGEST"
 printf 'SOURCE_SHA=%s\n' "$SOURCE_SHA"
-printf 'ATTESTATIONS=%s (SBOM + BuildKit provenance mode=max)\n' "$attestation_count"
+printf 'ATTESTATIONS=%s (SPDX SBOM + SLSA provenance mode=max)\n' "$attestation_count"
