@@ -4,6 +4,12 @@ on:
   push:
     branches: ['main', 'chore/**', 'feat/**', 'fix/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character commit SHA to validate and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -33,6 +39,31 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+
+      - name: Verify source provenance
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "SOURCE_SHA=$SOURCE_SHA"
+
+      - name: Validate release shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/release/verify-published-image.sh scripts/release/smoke-runtime.sh; do
+            bash -n "$script"
+          done
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck --shell=bash --severity=warning scripts/release/verify-published-image.sh scripts/release/smoke-runtime.sh
+          else
+            echo 'shellcheck unavailable; bash -n completed'
+          fi
 
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -58,6 +89,7 @@ jobs:
         run: |
           pnpm prisma:validate
           pnpm prisma:migrate:deploy
+          pnpm prisma migrate status
 
       - name: Test
         run: pnpm test
@@ -76,3 +108,76 @@ jobs:
           docker run --rm --entrypoint node edupay-identity:ci -e "const fs = require('node:fs'); const files = ['dist/main.js', 'dist/email/worker-main.js', 'dist/bootstrap/identity-email-correction-main.js', 'dist/bootstrap/identity-email-verification-main.js']; if (files.some((file) => !fs.existsSync(file))) process.exit(1);"
           docker run --rm --entrypoint node edupay-identity:ci dist/bootstrap/identity-email-correction-main.js --help
           docker run --rm --entrypoint node edupay-identity:ci dist/bootstrap/identity-email-verification-main.js --help
+
+  publish-runtime:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+      IMAGE: ghcr.io/sherydans12/edupay-identity
+    steps:
+      - name: Validate source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Check out the exact source SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Verify checked out source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the immutable runtime artifact
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.SOURCE_SHA }}
+          labels: |
+            org.opencontainers.image.source=${{ env.SOURCE_URL }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.title=EduPay Identity runtime
+          provenance: mode=max
+          sbom: true
+
+      - name: Verify runtime digest, labels, SBOM, and provenance
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE_DIGEST"
+          EXPECTED_CMD_JSON='["node","dist/main.js"]' \
+            bash scripts/release/verify-published-image.sh
+
+      - name: Runtime smoke, health, and JWKS
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: bash scripts/release/smoke-runtime.sh

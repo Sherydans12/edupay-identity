@@ -2,6 +2,11 @@ name: Publish identity migration runner
 
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character commit SHA to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -11,26 +16,40 @@ jobs:
   publish:
     runs-on: ubuntu-24.04
     env:
-      SOURCE_SHA: ${{ github.sha }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
       SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
       IMAGE: ghcr.io/sherydans12/edupay-identity-migrate
     steps:
       - name: Check out the exact dispatched revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha }}
           fetch-depth: 1
 
       - name: Verify source provenance
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           echo "RUNNER_OS=$RUNNER_OS"
           echo "RUNNER_ARCH=$RUNNER_ARCH"
           echo "RUNNER_NAME=$RUNNER_NAME"
           echo "SOURCE_SHA=$SOURCE_SHA"
+
+      - name: Validate release shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/release/verify-published-image.sh scripts/release/smoke-runtime.sh; do
+            bash -n "$script"
+          done
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck --shell=bash --severity=warning scripts/release/verify-published-image.sh scripts/release/smoke-runtime.sh
+          else
+            echo 'shellcheck unavailable; bash -n completed'
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -77,16 +96,5 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$IMAGE_DIGEST"
-          test "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$
-          IMMUTABLE_REFERENCE="$IMAGE@$IMAGE_DIGEST"
-          docker buildx imagetools inspect "$IMMUTABLE_REFERENCE"
-          docker buildx imagetools inspect --raw "$IMMUTABLE_REFERENCE" > /tmp/identity-migrate-manifest.json
-          jq -e '[.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")] | length > 0' /tmp/identity-migrate-manifest.json
-          docker pull "$IMMUTABLE_REFERENCE"
-          test "$(docker inspect "$IMMUTABLE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "$SOURCE_URL"
-          test "$(docker inspect "$IMMUTABLE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
-          test "$(docker inspect "$IMMUTABLE_REFERENCE" --format '{{json .Config.Cmd}}')" = '["pnpm","prisma:migrate:deploy"]'
-          echo "MIGRATION_IMAGE=$IMMUTABLE_REFERENCE"
-          echo "MIGRATION_IMAGE_DIGEST=$IMAGE_DIGEST"
-          echo "MIGRATION_SOURCE_SHA=$SOURCE_SHA"
-          echo "MIGRATION_PROVENANCE=BuildKit mode=max + SBOM verified"
+          EXPECTED_CMD_JSON='["pnpm","prisma:migrate:deploy"]' \
+            bash scripts/release/verify-published-image.sh
