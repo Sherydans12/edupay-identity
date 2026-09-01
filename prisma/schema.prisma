@@ -68,6 +68,7 @@ model IdentityUser {
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   auditEvents         AuthAuditEvent[]
+  provisioningIdempotencyReceipts ProvisioningIdempotencyReceipt[] @relation("ProvisioningIdempotencyActor")
 
   @@map("identity_users")
 }
@@ -112,6 +113,7 @@ model TenantRealm {
   loginIdentifiers LoginIdentifier[]
   memberships      TenantMembership[]
   auditEvents      AuthAuditEvent[]
+  provisioningIdempotencyReceipts ProvisioningIdempotencyReceipt[] @relation("ProvisioningIdempotencyTenant")
 
   @@map("tenant_realms")
 }
@@ -299,4 +301,22 @@ model OutboxEvent {
 
   @@index([status, availableAt], map: "outbox_events_status_available_idx")
   @@map("outbox_events")
+}
+
+model ProvisioningIdempotencyReceipt {
+  id             String       @id @default(uuid()) @db.Uuid
+  operation      String       @db.VarChar(64)
+  actorUserId    String       @db.Uuid
+  tenantRealmId  String       @db.Uuid
+  idempotencyKey String       @db.VarChar(128)
+  payloadHash    String       @db.Char(64)
+  statusCode     Int          @default(201)
+  responseBody   String       @db.Text
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  actorUser      IdentityUser @relation("ProvisioningIdempotencyActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  tenantRealm    TenantRealm  @relation("ProvisioningIdempotencyTenant", fields: [tenantRealmId], references: [id], onDelete: Restrict)
+
+  @@unique([operation, actorUserId, tenantRealmId, idempotencyKey], map: "provisioning_idempotency_receipts_scope_key")
+  @@index([createdAt], map: "provisioning_idempotency_receipts_created_at_idx")
+  @@map("provisioning_idempotency_receipts")
 }

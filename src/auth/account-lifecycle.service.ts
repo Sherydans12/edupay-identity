@@ -12,6 +12,7 @@ import {
   TenantRealmStatus,
 } from '../generated/prisma/enums.js';
 import type { Environment } from '../config/environment.js';
+import { canonicalJson, sha256CanonicalJson } from '../common/canonical-json.js';
 import { SafeHttpException } from '../common/safe-http.exception.js';
 import {
   createInvitationEmail,
@@ -57,6 +58,13 @@ interface MembershipDetails {
 
 const MANAGED_ROLES = new Set<RoleCode>([RoleCode.STUDENT, RoleCode.TEACHER]);
 const TOKEN_EXPIRED_MESSAGE = 'The requested credential is expired or no longer available.';
+const PROVISIONING_OPERATION = 'MEMBERSHIP_PROVISION';
+
+interface ProvisioningReceipt {
+  payloadHash: string;
+  responseBody: string;
+  statusCode: number;
+}
 
 @Injectable()
 export class AccountLifecycleService {
@@ -77,6 +85,7 @@ export class AccountLifecycleService {
     tenantId: string,
     input: CreateMembershipDto,
     requestId: string,
+    idempotencyKey?: string,
   ): Promise<Record<string, unknown>> {
     this.assertTenantAdmin(principal, tenantId);
     this.assertManagedRoles(input.roles);
@@ -84,8 +93,32 @@ export class AccountLifecycleService {
 
     const username = this.normalization.normalizeUsername(input.institutionalUsername);
     const email = input.email ? this.normalization.normalizeEmail(input.email) : undefined;
+    const normalizedIdempotencyKey = idempotencyKey === undefined
+      ? undefined
+      : this.normalizeIdempotencyKey(idempotencyKey);
+    const payloadHash = sha256CanonicalJson({
+      email: email ?? null,
+      institutionalUsername: username,
+      roles: [...input.roles].sort(),
+      userId: input.userId ?? null,
+    });
 
-    return this.prisma.$transaction(async (transaction) => {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+      if (normalizedIdempotencyKey) {
+        const existingReceipt = await transaction.provisioningIdempotencyReceipt.findUnique({
+          where: {
+            operation_actorUserId_tenantRealmId_idempotencyKey: {
+              operation: PROVISIONING_OPERATION,
+              actorUserId: principal.userId,
+              tenantRealmId: tenantId,
+              idempotencyKey: normalizedIdempotencyKey,
+            },
+          },
+        });
+        if (existingReceipt) return this.replayProvisioningReceipt(existingReceipt, payloadHash);
+      }
+
       const tenant = await transaction.tenantRealm.findUnique({ where: { id: tenantId } });
       if (!tenant || tenant.status !== TenantRealmStatus.ACTIVE) this.notFound();
 
@@ -194,7 +227,7 @@ export class AccountLifecycleService {
         },
       });
 
-      return {
+      const response = {
         userId: user.id,
         membershipId: membership.id,
         tenantId,
@@ -207,7 +240,40 @@ export class AccountLifecycleService {
           activationChallengeAvailable: !email,
         },
       };
-    });
+
+      if (!normalizedIdempotencyKey) return response;
+
+      // Persist only the safe response needed for replay. The request body is
+      // represented by its hash; credentials and activation secrets never enter
+      // this receipt.
+      const responseBody = canonicalJson(response);
+      await transaction.provisioningIdempotencyReceipt.create({
+        data: {
+          operation: PROVISIONING_OPERATION,
+          actorUserId: principal.userId,
+          tenantRealmId: tenantId,
+          idempotencyKey: normalizedIdempotencyKey,
+          payloadHash,
+          statusCode: 201,
+          responseBody,
+        },
+      });
+      return JSON.parse(responseBody) as Record<string, unknown>;
+      });
+    } catch (error) {
+      const replay = normalizedIdempotencyKey
+        ? await this.tryResolveProvisioningFailure(
+            error,
+            principal.userId,
+            tenantId,
+            normalizedIdempotencyKey,
+            payloadHash,
+          )
+        : undefined;
+      if (replay) return replay;
+      if (isUniqueConstraintError(error)) this.conflict('The requested membership cannot be created.');
+      throw error;
+    }
   }
 
   async updateMembership(
@@ -851,6 +917,56 @@ export class AccountLifecycleService {
     });
   }
 
+  private normalizeIdempotencyKey(value: string): string {
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value)) {
+      throw new SafeHttpException(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_IDEMPOTENCY_KEY',
+        'The Idempotency-Key header is invalid.',
+      );
+    }
+    return value;
+  }
+
+  private replayProvisioningReceipt(receipt: ProvisioningReceipt, payloadHash: string): Record<string, unknown> {
+    if (receipt.payloadHash !== payloadHash) this.idempotencyConflict();
+    return JSON.parse(receipt.responseBody) as Record<string, unknown>;
+  }
+
+  private async tryResolveProvisioningFailure(
+    error: unknown,
+    actorUserId: string,
+    tenantRealmId: string,
+    idempotencyKey: string,
+    payloadHash: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const isExpectedConflict = error instanceof SafeHttpException && error.safeError.code === 'CONFLICT';
+    if (!isUniqueConstraintError(error) && !isExpectedConflict) return undefined;
+
+    // A concurrent PostgreSQL transaction may have observed the business-row
+    // conflict rather than throwing P2002. Resolve both cases from the receipt
+    // after the losing transaction has fully rolled back/committed.
+    const receipt = await this.prisma.provisioningIdempotencyReceipt.findUnique({
+      where: {
+        operation_actorUserId_tenantRealmId_idempotencyKey: {
+          operation: PROVISIONING_OPERATION,
+          actorUserId,
+          tenantRealmId,
+          idempotencyKey,
+        },
+      },
+    });
+    return receipt ? this.replayProvisioningReceipt(receipt, payloadHash) : undefined;
+  }
+
+  private idempotencyConflict(): never {
+    throw new SafeHttpException(
+      HttpStatus.CONFLICT,
+      'IDEMPOTENCY_CONFLICT',
+      'The Idempotency-Key was already used with a different payload.',
+    );
+  }
+
   private async findMembership(
     client: PrismaService | LifecycleTransaction,
     tenantId: string,
@@ -1061,4 +1177,13 @@ export class AccountLifecycleService {
   private conflict(message: string): never {
     throw new SafeHttpException(HttpStatus.CONFLICT, 'CONFLICT', message);
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'P2002'
+  );
 }

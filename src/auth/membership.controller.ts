@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { Body, Controller, Header, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Header, Headers, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from './access-token.guard.js';
 import { AccountLifecycleService } from './account-lifecycle.service.js';
@@ -17,9 +17,10 @@ export class MembershipController {
   provision(
     @Param('tenantId') tenantId: string,
     @Body() input: CreateMembershipDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<Record<string, unknown>> {
-    return this.lifecycle.provisionMembership(request.auth, tenantId, input, request.requestId);
+    return this.lifecycle.provisionMembership(request.auth, tenantId, input, request.requestId, idempotencyKey);
   }
 
   @Patch(':membershipId')

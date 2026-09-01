@@ -17,3 +17,4 @@ These ADRs turn the Identity architecture into explicit contracts. All ten recor
 | [0008](ADR-0008-existing-admin-coexistence.md) | Leave existing EduPay admin auth untouched | Accepted (2026-08-08) |
 | [0009](ADR-0009-browser-session-topology.md) | Browser-safe refresh-cookie and origin topology | Accepted (2026-08-09) |
 | [0010](ADR-0010-academico-restricted-service-auth.md) | Restricted Académico service authentication and verification | Accepted (2026-08-09) |
+| [0011](ADR-0011-provisioning-idempotency.md) | Transactional membership-provisioning idempotency | Accepted (2026-08-31) |
