@@ -36,6 +36,7 @@ writeFileSync(
 );
 chmodSync(join(directory, 'private.pem'), 0o644);
 NODE
+chmod 755 "$key_directory"
 
 docker run --detach --name "$container_name" --publish "$host_port:3000" \
   --volume "$key_directory:/run/identity-keys:ro" \
@@ -70,7 +71,10 @@ for attempt in {1..30}; do
 done
 
 jq -e '.status == "ok" and .service == "edupay-identity"' /tmp/identity-runtime-health.json >/dev/null
-curl --fail --silent "http://127.0.0.1:$host_port/.well-known/jwks.json" >/tmp/identity-runtime-jwks.json
+if ! curl --fail --silent "http://127.0.0.1:$host_port/.well-known/jwks.json" >/tmp/identity-runtime-jwks.json; then
+  docker logs "$container_name" >&2
+  exit 1
+fi
 jq -e '.keys | length > 0 and all(.[]; has("d") | not)' /tmp/identity-runtime-jwks.json >/dev/null
 
 for attempt in {1..30}; do
