@@ -34,7 +34,7 @@ Final state: `HOLD_PENDING_FINAL_CUTOVER_RETRY_AUTHORIZATION`
 
 ## Durable migration-runner remediation and final cutover rollback
 
-- Exact migration-source equivalence passed: Identity runner source `c511716f077752f69d0b0dff7e5f9174d51a3103` has identical Prisma migration/schema inputs to reviewed runtime source `4a684fac5734d24a553d174cb7c3ae3c615c942a`; Academic runner source `a75e8d7b6c57850a52b5bcccb1c606a25b80cd02` has identical migration tree, schema, and lockfile inputs to reviewed source `5b0ad1f5f8ab0552ed1c502f30840b4afcc13fd8`.
+- Historical migration-source equivalence evidence was retained for the prior cutover records; current Identity release provenance is established only by the exact SHA supplied to the dispatch inputs and verified after checkout.
 - New public immutable artifacts were built by merged workflow-dispatch-only GitHub Actions workflows, each checking out its exact runner source SHA: Identity `ghcr.io/sherydans12/edupay-identity-migrate@sha256:b20d4c848058789dd5ee11e32c6dc80bb2a81451395eff51a5b57768e5bf0da0`; Academic `ghcr.io/sherydans12/edupay-academico-migrate@sha256:e19a90f17770b27cc43be31a9dc9196b4a1aec456cbc3467ffccbfeed2d19970`.
 - OCI provenance and commands matched; anonymous digest pulls, secret/history checks, disposable PostgreSQL 15 migrations and idempotent reruns, native non-authoritative proofs, exact existing-runner patches, target-host checks, and targeted local-removal/reacquisition proofs all passed. `MIGRATION_RUNNER_DURABLE_ARTIFACT_REMEDIATION=PASS`; `MIGRATION_RUNNER_ARTIFACT_GATE=PASS`; `MIGRATION_RUNNER_DATABASE_TARGET_GATE=PASS`.
 - The final frozen cutover created a new pre-cutover recovery point `20260816T063114Z`, restored both frozen manual databases into native with PostgreSQL 15, passed checksums, and passed all-table strict reconciliation. The updated existing runners completed successfully.
@@ -120,7 +120,7 @@ The initial evidence capture recorded a temporary production-control-plane acces
 
 ## Migration-runner native database-target proof
 
-- The runner artifact gate uses two distinct checks: the configured Service image reference must equal the reviewed source-backed tag, and Docker must resolve that tag locally to its authorized image ID. It does not compare a tag string directly with an image ID. The Identity runner reference `bgaqul218khdtq3se4pf8dnj_migrate:c511716f077752f69d0b0dff7e5f9174d51a3103` resolved to `sha256:d4bea300ee2eff6fd33d89287ba9145ffe0932052efe80d80d19eadc686130b9`; the Academic runner reference `h1j4z41841v4d8qx2cwmrbht_migrate:a75e8d7b6c57850a52b5bcccb1c606a25b80cd02` resolved to `sha256:385164d3153317b80ed9b73e18bd1fbf59e5338daef12c90a6ffb565f69de720`.
+- The runner artifact gate uses two distinct checks: the configured Service image reference must match the approved source-backed release input, and Docker must resolve that source to its authorized OCI digest. It does not compare a mutable tag string directly with an image ID; the current Identity workflow reports and verifies the immutable digest after publication.
 - Both runner Services remained configured with `restart: "no"`, `exclude_from_hc: true`, private Coolify-network connectivity, no domain, no published port, and no build or automatic-pull substitution behavior. No runner container was running during this proof.
 - The official read-only `GET /api/v1/services/{service_uuid}/envs` endpoint authenticated successfully. Each Service had exactly one `DATABASE_URL`; the effective field was `value` and was processed only in memory. No URL, username, password, token, or raw API response was persisted.
 - Identity resolved to the native Identity resource `bluypktxta8uisbrfzu6p9pw`, port `5432`, database `postgres`; the native endpoint IPv4 was `10.0.1.22`. Academic resolved to `v5w9hacwtftulf4m46l1rn2g`, port `5432`, database `postgres`; its native endpoint IPv4 was `10.0.1.23`.
@@ -290,4 +290,3 @@ The initial evidence capture recorded a temporary production-control-plane acces
   - `ACTIVE_NOTIFICATION_WORKERS=1`
   - `ACTIVE_SYNC_WORKERS=0`
   - Final state: `HOLD_PENDING_HUMAN_PASSWORD_RESET_AND_BL002_UPDATE`
-
