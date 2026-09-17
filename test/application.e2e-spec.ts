@@ -98,19 +98,20 @@ describe('application bootstrap (e2e)', () => {
 
   it('allows credentialed CORS only for an explicitly trusted origin', async () => {
     const trusted = await request(app.getHttpServer())
-      .options('/api/v1/auth/refresh')
+      .options('/api/v1/auth/password-recovery/request')
       .set('Origin', 'https://academico.test')
       .set('Access-Control-Request-Method', 'POST')
-      .set('Access-Control-Request-Headers', 'content-type,authorization')
+      .set('Access-Control-Request-Headers', 'content-type,x-request-id,idempotency-key')
       .expect(204);
 
     expect(trusted.headers['access-control-allow-origin']).toBe('https://academico.test');
     expect(trusted.headers['access-control-allow-credentials']).toBe('true');
     expect(trusted.headers['access-control-allow-methods']).toContain('POST');
+    expect(String(trusted.headers['access-control-allow-headers']).toLowerCase()).toContain('idempotency-key');
     expect(trusted.headers['access-control-allow-origin']).not.toBe('*');
 
     const untrusted = await request(app.getHttpServer())
-      .options('/api/v1/auth/refresh')
+      .options('/api/v1/auth/password-recovery/request')
       .set('Origin', 'https://evil.test')
       .set('Access-Control-Request-Method', 'POST')
       .expect(404);

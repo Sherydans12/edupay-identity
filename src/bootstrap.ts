@@ -37,6 +37,7 @@ export function configureApplication(app: INestApplication): void {
       'Authorization',
       'X-Request-Id',
       'X-EduPay-Client-Type',
+      'Idempotency-Key',
     ],
     exposedHeaders: ['X-Request-Id'],
     maxAge: 600,
