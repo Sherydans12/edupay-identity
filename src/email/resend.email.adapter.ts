@@ -2,6 +2,39 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Environment } from '../config/environment.js';
 import { EmailDeliveryAdapter, EmailDeliveryError } from './email.types.js';
+import type { SafeProviderDiagnostic } from './email.types.js';
+
+const SAFE_PROVIDER_CODE = /^[a-z0-9][a-z0-9_.-]{0,63}$/i;
+
+function sanitizeProviderMessage(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const sanitized = value
+    .replace(/https?:\/\/[^\s]+/gi, '<redacted-url>')
+    .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '<redacted-email>')
+    .replace(/\b(?:bearer|token|secret|key)\s*[:=]\s*[^\s]+/gi, '<redacted-secret>')
+    .replace(/\b(?:re|rst|tok|key)_[a-z0-9_-]+\b/gi, '<redacted-opaque>')
+    .replace(/\b[0-9a-f]{32,}\b/gi, '<redacted-opaque>')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, '<redacted-opaque>')
+    .replace(/[^\x20-\x7e]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return sanitized || undefined;
+}
+
+function safeProviderDiagnostic(body: unknown): SafeProviderDiagnostic | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const candidate = body as { name?: unknown; message?: unknown };
+  const code = typeof candidate.name === 'string' && SAFE_PROVIDER_CODE.test(candidate.name)
+    ? candidate.name
+    : undefined;
+  const message = sanitizeProviderMessage(candidate.message);
+  if (!code && !message) return undefined;
+  const diagnostic: SafeProviderDiagnostic = {};
+  if (code) diagnostic.code = code;
+  if (message) diagnostic.message = message;
+  return diagnostic;
+}
 import type { EmailDeliveryResult, EmailMessage } from './email.types.js';
 
 @Injectable()
@@ -30,11 +63,18 @@ export class ResendEmailAdapter extends EmailDeliveryAdapter {
     }
 
     if (!response.ok) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
       throw new EmailDeliveryError(
         response.status >= 400 && response.status < 500 && response.status !== 429
           ? 'RESEND_PROVIDER_REJECTED'
           : 'RESEND_PROVIDER_UNAVAILABLE',
         response.status >= 500 || response.status === 429,
+        safeProviderDiagnostic(body),
       );
     }
 
