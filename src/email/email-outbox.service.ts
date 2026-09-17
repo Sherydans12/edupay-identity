@@ -89,6 +89,7 @@ export class EmailOutboxService implements OnApplicationBootstrap, OnApplication
   private readonly maxAttempts: number;
   private readonly baseBackoffSeconds: number;
   private timer: NodeJS.Timeout | undefined;
+  private drainPromise: Promise<{ published: number; failed: number }> | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -136,6 +137,14 @@ export class EmailOutboxService implements OnApplicationBootstrap, OnApplication
   }
 
   async deliverPending(limit = 20): Promise<{ published: number; failed: number }> {
+    if (this.drainPromise) return this.drainPromise;
+    this.drainPromise = this.deliverPendingOnce(limit).finally(() => {
+      this.drainPromise = undefined;
+    });
+    return this.drainPromise;
+  }
+
+  private async deliverPendingOnce(limit: number): Promise<{ published: number; failed: number }> {
     const events = await this.prisma.outboxEvent.findMany({
       where: {
         eventType: { startsWith: 'identity.email.' },
@@ -168,7 +177,7 @@ export class EmailOutboxService implements OnApplicationBootstrap, OnApplication
         const retryable = !(error instanceof EmailDeliveryError) || error.retryable;
         const terminal = !retryable || attemptCount >= event.maxAttempts;
         const delaySeconds = this.baseBackoffSeconds * 2 ** Math.min(attemptCount - 1, 8);
-        const safeError = error instanceof EmailDeliveryError ? error.safeCode : 'EMAIL_DELIVERY_FAILED';
+        const safeError = error instanceof EmailDeliveryError ? error.safeSummary : 'EMAIL_DELIVERY_FAILED';
         await this.prisma.outboxEvent.updateMany({
           where: { id: event.id, status: OutboxStatus.PENDING },
           data: {
