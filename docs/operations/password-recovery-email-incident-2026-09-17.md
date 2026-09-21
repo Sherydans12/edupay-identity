@@ -30,7 +30,7 @@ The encrypted outbox structure was inspected without printing values: all three 
 
 The adapter now retains only an allowlisted provider code and a bounded message with emails, URLs, opaque values, and secret-like values redacted. Historical rows keep their safe error only; no private provider response was backfilled.
 
-Required external intervention: in the Resend console, create/identify an active API key with sending access, then update only the Coolify Identity secret `RESEND_API_KEY` with that exact value and redeploy Identity. Do not change DNS or use an unverified sender; confirm the existing `edupay.baselogic.cl` sender domain is verified before sending. This change has not been made. A new single recovery request should be made only after that intervention; the four terminally failed historical intents were not manually requeued.
+Required external intervention was limited to the Resend console: the user replaced only the Coolify Identity secret `RESEND_API_KEY` with an active sending key. No DNS, sender-domain, account, or permission change was made by this work. The user then confirmed that one new recovery request arrived successfully. The four terminally failed historical intents were not manually requeued or resent.
 
 ## Sanitized verification
 
@@ -41,6 +41,7 @@ Before and after deployment, the public checks used only synthetic `.invalid` id
 - Synthetic non-eligible POST: `202`, generic `{"accepted":true}`, exact Académico CORS, and the supplied safe `X-Request-Id` echoed.
 - Identity health: HTTP `200`; deployed container: `running (healthy)`; command remains `node dist/main.js`.
 - Outbox after the diagnostic redeploy: six historical recovery events remain `PUBLISHED` with provider IDs; four recovery events are terminal `FAILED`, each at `attempts=1`, with `RESEND_PROVIDER_REJECTED` and zero provider IDs. After waiting beyond one scheduler interval, the aggregate was unchanged. No agent-generated real recipient was used.
+- User confirmation: after the key replacement, the user submitted one new recovery request and confirmed receipt. This confirms the provider-to-mailbox outcome for that request by user report; it does not verify the complete password-change flow.
 
 The isolated test suite passed: outbox/provider/application tests (8 tests), lint, typecheck, production build, and the account-lifecycle integration suite (8 tests) against a disposable PostgreSQL container. The tests cover provider diagnostic redaction, permanent rejection without retry, concurrent drain serialization, synthetic teacher eligibility, generic unknown-account behavior, outbox creation, fake delivery, expiration, one-time consumption, and session revocation. No production migration was executed.
 
@@ -56,4 +57,8 @@ Rollback procedure: restore the saved Compose image reference to the previous di
 
 ## User confirmation
 
-The prior unit-creation incident is confirmed resolved by the user. For this incident, the browser is prepared on Académico's recovery form, but real receipt is not yet confirmed. After the Resend credential/access intervention, the user must submit exactly one request from the existing teacher session and report the approximate local time and whether the message appears in inbox or spam. An API `202` or provider acceptance alone must not be treated as proof of receipt.
+The prior unit-creation incident is confirmed resolved by the user. The password-recovery delivery incident is resolved by user confirmation: after replacing `RESEND_API_KEY`, one new recovery email arrived. The complete password-change flow remains unverified and is intentionally not claimed as tested. No historical `FAILED` outbox event was requeued or resent.
+
+## Recovery-email template follow-up
+
+The subsequent template improvement is intentionally limited to `createPasswordRecoveryEmail`. It keeps the existing token, authorized account UI URL, configured expiration, outbox idempotency, generic API response, and security controls. The existing invitation template remains a separate English template and was inventoried but not changed in this cut.
