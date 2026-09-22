@@ -29,3 +29,17 @@ export class ResolveIdentityUserDto {
   @IsIn([RoleCode.STUDENT, RoleCode.TEACHER])
   expectedRole!: ExpectedAcademicRole;
 }
+
+/**
+ * Exact, non-enumerative membership verification for an Academic-owned
+ * sensitive module. The target id is derived from an already tenant-scoped
+ * Academic record; no browser-provided tenant or role is trusted.
+ */
+export class VerifyTenantMembershipDto {
+  @ValidateNested()
+  @Type(() => InternalActorDto)
+  actor!: InternalActorDto;
+
+  @IsUUID('4')
+  targetIdentityUserId!: string;
+}

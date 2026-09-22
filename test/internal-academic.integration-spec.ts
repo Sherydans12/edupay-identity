@@ -10,11 +10,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApplication } from '../src/bootstrap.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
-import {
-  MembershipStatus,
-  RoleCode,
-  RoleScope,
-} from '../src/generated/prisma/enums.js';
+import { MembershipStatus, RoleCode, RoleScope } from '../src/generated/prisma/enums.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithDatabase = databaseUrl ? describe : describe.skip;
@@ -54,7 +50,9 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
     directory = await mkdtemp(join(tmpdir(), 'edupay-identity-internal-academic-'));
     const privateKeyPath = join(directory, 'private.pem');
     const jwksPath = join(directory, 'public.jwks.json');
-    const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+    });
     privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
     await writeFile(privateKeyPath, privateKeyPem);
     await writeFile(
@@ -98,17 +96,19 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
       RATE_LIMIT_INTERNAL_MAX: '100000',
       IDENTITY_ACADEMICO_SERVICE_TOKEN: currentServiceToken,
       IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS: previousServiceToken,
-      IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT: new Date(
-        Date.now() + 60 * 60 * 1_000,
-      ).toISOString(),
+      IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
     });
 
     const { AppModule } = await import('../src/app.module.js');
-    const moduleFixture = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleFixture.createNestApplication();
     configureApplication(app);
     await app.init();
-    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl! }) });
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl! }),
+    });
   });
 
   beforeEach(async () => {
@@ -129,9 +129,7 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
   });
 
   it('denies missing, wrong, browser-origin, and ordinary end-user bearer credentials safely', async () => {
-    await request(app.getHttpServer())
-      .get(`/internal/v1/sessions/${fixture.actorSessionId}/status`)
-      .expect(401);
+    await request(app.getHttpServer()).get(`/internal/v1/sessions/${fixture.actorSessionId}/status`).expect(401);
 
     const wrongToken = randomBytes(32).toString('base64url');
     const logSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -219,10 +217,7 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
   });
 
   it('verifies exact PENDING_ACTIVATION and ACTIVE STUDENT memberships', async () => {
-    const pending = await resolveRequest(
-      fixture.pendingStudentUserId,
-      RoleCode.STUDENT,
-    ).expect(200);
+    const pending = await resolveRequest(fixture.pendingStudentUserId, RoleCode.STUDENT).expect(200);
     expect(pending.body).toEqual({
       verified: true,
       identityUserId: fixture.pendingStudentUserId,
@@ -232,10 +227,7 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
       roles: [RoleCode.STUDENT],
     });
 
-    const active = await resolveRequest(
-      fixture.activeStudentUserId,
-      RoleCode.STUDENT,
-    ).expect(200);
+    const active = await resolveRequest(fixture.activeStudentUserId, RoleCode.STUDENT).expect(200);
     expect(active.body).toMatchObject({
       verified: true,
       identityUserId: fixture.activeStudentUserId,
@@ -247,10 +239,7 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
   });
 
   it('verifies an exact active TEACHER membership', async () => {
-    const response = await resolveRequest(
-      fixture.activeTeacherUserId,
-      RoleCode.TEACHER,
-    ).expect(200);
+    const response = await resolveRequest(fixture.activeTeacherUserId, RoleCode.TEACHER).expect(200);
     expect(response.body).toEqual({
       verified: true,
       identityUserId: fixture.activeTeacherUserId,
@@ -316,6 +305,38 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
     ).expect(403);
   });
 
+  it('verifies an exact active same-tenant membership for a non-admin Academic actor', async () => {
+    const response = await verifyMembershipWithActor(
+      {
+        identityUserId: fixture.nonAdminUserId,
+        sessionId: fixture.nonAdminSessionId,
+        membershipId: fixture.nonAdminMembershipId,
+        tenantId: fixture.tenantAId,
+      },
+      fixture.activeTeacherUserId,
+    ).expect(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toMatchObject({
+      verified: true,
+      identityUserId: fixture.activeTeacherUserId,
+      membershipId: fixture.activeTeacherMembershipId,
+      tenantId: fixture.tenantAId,
+      membershipStatus: MembershipStatus.ACTIVE,
+      roles: [RoleCode.TEACHER],
+    });
+  });
+
+  it('fails closed for cross-tenant targets, inactive targets, and revoked actors', async () => {
+    await verifyMembershipWithActor(actorBody(), fixture.otherTenantStudentUserId).expect(404);
+    await verifyMembershipWithActor(actorBody(), fixture.suspendedStudentUserId).expect(404);
+    await verifyMembershipWithActor(actorBody(), fixture.revokedStudentUserId).expect(404);
+    await prisma.session.update({
+      where: { id: fixture.actorSessionId },
+      data: { revokedAt: new Date(), revocationReason: 'TEST_REVOKED' },
+    });
+    await verifyMembershipWithActor(actorBody(), fixture.activeTeacherUserId).expect(403);
+  });
+
   it('does not expose an unbounded directory or accept search-shaped resolve input', async () => {
     await request(app.getHttpServer())
       .get('/internal/v1/identity-users')
@@ -373,6 +394,14 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
       .send({ actor, targetIdentityUserId, expectedRole });
   }
 
+  function verifyMembershipWithActor(actor: ReturnType<typeof actorBody>, targetIdentityUserId: string) {
+    return request(app.getHttpServer())
+      .post('/internal/v1/tenant-memberships/verify')
+      .set(serviceAuthorization(currentServiceToken))
+      .set('X-Request-Id', `req_${randomUUID()}`)
+      .send({ actor, targetIdentityUserId });
+  }
+
   function actorBody() {
     return {
       identityUserId: fixture.actorUserId,
@@ -394,7 +423,11 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
       scope: ['academic:use'],
       auth_time: now,
     })
-      .setProtectedHeader({ alg: 'RS256', kid: 'internal-academic-key', typ: 'JWT' })
+      .setProtectedHeader({
+        alg: 'RS256',
+        kid: 'internal-academic-key',
+        typ: 'JWT',
+      })
       .setIssuer('https://identity.test.edupay.example')
       .setAudience('edupay-academico-api')
       .setSubject(fixture.actorUserId)
@@ -545,23 +578,43 @@ async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
   });
   await prisma.membershipRole.createMany({
     data: [
-      { membershipId: memberships.actorMembershipId, roleId: tenantAdminRole.id },
-      { membershipId: memberships.nonAdminMembershipId, roleId: teacherRole.id },
-      { membershipId: memberships.pendingStudentMembershipId, roleId: studentRole.id },
-      { membershipId: memberships.activeStudentMembershipId, roleId: studentRole.id },
-      { membershipId: memberships.activeTeacherMembershipId, roleId: teacherRole.id },
-      { membershipId: memberships.otherTenantStudentMembershipId, roleId: studentRole.id },
-      { membershipId: memberships.suspendedStudentMembershipId, roleId: studentRole.id },
-      { membershipId: memberships.revokedStudentMembershipId, roleId: studentRole.id },
+      {
+        membershipId: memberships.actorMembershipId,
+        roleId: tenantAdminRole.id,
+      },
+      {
+        membershipId: memberships.nonAdminMembershipId,
+        roleId: teacherRole.id,
+      },
+      {
+        membershipId: memberships.pendingStudentMembershipId,
+        roleId: studentRole.id,
+      },
+      {
+        membershipId: memberships.activeStudentMembershipId,
+        roleId: studentRole.id,
+      },
+      {
+        membershipId: memberships.activeTeacherMembershipId,
+        roleId: teacherRole.id,
+      },
+      {
+        membershipId: memberships.otherTenantStudentMembershipId,
+        roleId: studentRole.id,
+      },
+      {
+        membershipId: memberships.suspendedStudentMembershipId,
+        roleId: studentRole.id,
+      },
+      {
+        membershipId: memberships.revokedStudentMembershipId,
+        roleId: studentRole.id,
+      },
     ],
   });
 
   const actorSessionId = await createSession(prisma, ids.actorUserId, memberships.actorMembershipId);
-  const nonAdminSessionId = await createSession(
-    prisma,
-    ids.nonAdminUserId,
-    memberships.nonAdminMembershipId,
-  );
+  const nonAdminSessionId = await createSession(prisma, ids.nonAdminUserId, memberships.nonAdminMembershipId);
   const systemAdminSessionId = await createSession(prisma, ids.systemAdminUserId, null);
 
   return {
@@ -587,11 +640,7 @@ async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
   };
 }
 
-async function createSession(
-  prisma: PrismaClient,
-  userId: string,
-  activeMembershipId: string | null,
-): Promise<string> {
+async function createSession(prisma: PrismaClient, userId: string, activeMembershipId: string | null): Promise<string> {
   const session = await prisma.session.create({
     data: {
       userId,
