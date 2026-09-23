@@ -1,4 +1,4 @@
-# ADR-0011: STAFF y resolución exacta de personal para DIE
+# ADR-0012: STAFF y resolución exacta de personal para DIE
 
 Estado: aceptada para implementación (2026-09-23).
 

@@ -125,6 +125,19 @@ When Académico calls on behalf of a signed-in tenant administrator, the adapter
 
 Creates a membership for an existing user or provisions a new user with a selected username/email. The response contains membership state, assigned roles, and an activation action, never a password.
 
+The optional `Idempotency-Key` header is scoped to this operation, the authenticated
+actor, and the canonical tenant ID. It accepts 1–128 characters matching
+`[A-Za-z0-9._:-]`. For a repeated key, Identity compares a SHA-256 hash of the
+canonical normalized payload (`userId`, username, optional email, and sorted roles):
+
+- the same key and hash replay the exact original `201` response, including generated IDs;
+- the same key with a different hash returns `409 IDEMPOTENCY_CONFLICT`;
+- the operation records and its receipt commit in one PostgreSQL transaction;
+- the receipt stores the payload hash and safe response only, never the request body,
+  password, invitation, activation, refresh, or service secret.
+
+Without the header, normal uniqueness and membership conflicts remain `409 CONFLICT`.
+
 ### `POST /api/v1/tenants/{tenantId}/memberships/{membershipId}/invite`
 
 Creates or resends an email invitation. The response reports durable invitation state, not the invitation token.
