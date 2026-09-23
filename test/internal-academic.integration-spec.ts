@@ -371,6 +371,11 @@ describeWithDatabase('restricted Academic integration (PostgreSQL)', () => {
       institutionalUsername: 'specialist.staff',
       roles: [RoleCode.STAFF],
     });
+    const audit = await prisma.authAuditEvent.findFirstOrThrow({
+      where: { eventType: 'INTERNAL_ELIGIBLE_PERSONNEL_RESOLVED' },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(JSON.stringify(audit.metadata)).not.toContain('specialist.staff');
   });
 
   it('makes unknown, cross-tenant and excluded personnel targets indistinguishable', async () => {
