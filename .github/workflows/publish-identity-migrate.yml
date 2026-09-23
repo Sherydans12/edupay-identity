@@ -86,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$IMAGE_DIGEST"
-          test "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           IMMUTABLE_REFERENCE="$IMAGE@$IMAGE_DIGEST"
           docker buildx imagetools inspect "$IMMUTABLE_REFERENCE"
           docker buildx imagetools inspect --raw "$IMMUTABLE_REFERENCE" > /tmp/identity-migrate-manifest.json
