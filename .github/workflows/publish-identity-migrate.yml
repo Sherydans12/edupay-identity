@@ -53,6 +53,15 @@ jobs:
           test "$(docker image inspect local/identity-migrate-proof --format '{{json .Config.Cmd}}')" = '["pnpm","prisma:migrate:deploy"]'
           test "$(docker image inspect local/identity-migrate-proof --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
           test -z "$(docker image inspect local/identity-migrate-proof --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Ei 'DATABASE_URL|TOKEN|SECRET|PASSWORD|PRIVATE_KEY' || true)"
+          docker run --rm --env DATABASE_URL=postgresql://build.invalid/identity --entrypoint sh local/identity-migrate-proof -lc '
+            command -v pnpm
+            pnpm exec prisma --version
+            schema_engine="$(find node_modules -type f -name "schema-engine*" -perm /111 -print -quit)"
+            test -n "$schema_engine"
+            test -x "$schema_engine"
+            case "$schema_engine" in *schema-engine-debian-openssl-3.0.x) ;; *) echo "Unexpected Prisma schema-engine target: $schema_engine" >&2; exit 1 ;; esac
+            "$schema_engine" --version
+          '
 
       - name: Build and publish the immutable migration artifact
         id: build
