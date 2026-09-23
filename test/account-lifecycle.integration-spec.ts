@@ -11,6 +11,7 @@ import {
   MembershipStatus,
   RoleCode,
   RoleScope,
+  TenantRealmStatus,
 } from '../src/generated/prisma/enums.js';
 import { argon2id, hash } from 'argon2';
 import { exportJWK } from 'jose';
@@ -107,7 +108,7 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
     tenantA = { id: randomUUID(), handle: `lifecycle-a-${randomUUID().slice(0, 8)}` };
     tenantB = { id: randomUUID(), handle: `lifecycle-b-${randomUUID().slice(0, 8)}` };
     await prisma.tenantRealm.createMany({ data: [tenantA, tenantB] });
-    for (const code of [RoleCode.TENANT_ADMIN, RoleCode.STUDENT, RoleCode.TEACHER]) {
+    for (const code of [RoleCode.TENANT_ADMIN, RoleCode.STUDENT, RoleCode.TEACHER, RoleCode.STAFF]) {
       await prisma.role.create({ data: { id: randomUUID(), code, scope: RoleScope.TENANT } });
     }
     adminPassword = 'admin-lifecycle-password';
@@ -190,6 +191,144 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
       .set('Authorization', `Bearer ${switched.body.accessToken}`)
       .send({ institutionalUsername: 'shared.student', roles: [RoleCode.STUDENT] })
       .expect(201);
+  });
+
+  it('replays the persisted receipt, rejects payload collisions, and preserves the HTTP body', async () => {
+    const admin = await loginAdmin(tenantA);
+    const payload = { institutionalUsername: 'idempotent.student', roles: [RoleCode.STUDENT] };
+    const first = await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'provision-replay-1')
+      .send(payload)
+      .expect(201);
+
+    const replay = await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'provision-replay-1')
+      .send({ institutionalUsername: 'IDEMPOTENT.STUDENT', roles: [RoleCode.STUDENT] })
+      .expect(201);
+
+    expect(replay.text).toBe(first.text);
+    expect(replay.body).toEqual(first.body);
+    expect(await prisma.provisioningIdempotencyReceipt.count()).toBe(1);
+    const receipt = await prisma.provisioningIdempotencyReceipt.findFirstOrThrow();
+    expect(receipt.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(receipt.responseBody).toBe(first.text);
+
+    const collision = await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'provision-replay-1')
+      .send({ institutionalUsername: 'idempotent.student', roles: [RoleCode.TEACHER] })
+      .expect(409);
+    expect(collision.body.error).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', details: [] });
+    expect(await prisma.identityUser.count()).toBe(2);
+    expect(await prisma.tenantMembership.count()).toBe(3);
+  });
+
+  it('does not replay a provisioning receipt after its tenant is suspended', async () => {
+    const admin = await loginAdmin(tenantA);
+    const payload = { institutionalUsername: 'suspended-replay.student', roles: [RoleCode.STUDENT] };
+    await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'suspended-replay-1')
+      .send(payload)
+      .expect(201);
+
+    await prisma.tenantRealm.update({ where: { id: tenantA.id }, data: { status: TenantRealmStatus.SUSPENDED } });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'suspended-replay-1')
+      .send(payload)
+      .expect(401);
+    expect(await prisma.provisioningIdempotencyReceipt.count()).toBe(1);
+    expect(await prisma.tenantMembership.count()).toBe(3);
+  });
+
+  it('collapses two concurrent PostgreSQL requests into one committed operation and receipt', async () => {
+    const admin = await loginAdmin(tenantA);
+    const send = () => request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', 'provision-concurrent-1')
+      .send({ institutionalUsername: 'concurrent.student', roles: [RoleCode.STUDENT] });
+
+    const [first, second] = await Promise.all([send(), send()]);
+    expect([first.status, second.status].sort()).toEqual([201, 201]);
+    expect(first.text).toBe(second.text);
+    expect(first.body.membershipId).toBe(second.body.membershipId);
+    expect(await prisma.identityUser.count()).toBe(2);
+    expect(await prisma.tenantMembership.count()).toBe(3);
+    expect(await prisma.provisioningIdempotencyReceipt.count()).toBe(1);
+
+    const race = (key: string) => request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .set('Idempotency-Key', key)
+      .send({ institutionalUsername: 'unique-error-race.student', roles: [RoleCode.STUDENT] });
+    const [raceFirst, raceSecond] = await Promise.all([race('unique-race-a'), race('unique-race-b')]);
+    expect([raceFirst.status, raceSecond.status].sort()).toEqual([201, 409]);
+    expect(raceFirst.status).not.toBe(500);
+    expect(raceSecond.status).not.toBe(500);
+  });
+
+  it('rolls back users, membership, events, audit, and receipt when provisioning fails', async () => {
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION fail_test_provisioning_audit()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        IF NEW."eventType" = 'MEMBERSHIP_CREATED' THEN
+          RAISE EXCEPTION 'forced disposable provisioning failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER fail_test_provisioning_audit_trigger
+      AFTER INSERT ON "auth_audit_events"
+      FOR EACH ROW EXECUTE FUNCTION fail_test_provisioning_audit();
+    `);
+    const admin = await loginAdmin(tenantA);
+    const before = await Promise.all([
+      prisma.identityUser.count(),
+      prisma.tenantMembership.count(),
+      prisma.loginIdentifier.count(),
+      prisma.membershipRole.count(),
+      prisma.outboxEvent.count(),
+      prisma.authAuditEvent.count(),
+      prisma.provisioningIdempotencyReceipt.count(),
+    ]);
+
+    try {
+      await request(app.getHttpServer())
+        .post(`/api/v1/tenants/${tenantA.id}/memberships`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .set('Idempotency-Key', 'provision-rollback-1')
+        .send({ institutionalUsername: 'rollback.student', roles: [RoleCode.STUDENT] })
+        .expect(500);
+
+      const after = await Promise.all([
+        prisma.identityUser.count(),
+        prisma.tenantMembership.count(),
+        prisma.loginIdentifier.count(),
+        prisma.membershipRole.count(),
+        prisma.outboxEvent.count(),
+        prisma.authAuditEvent.count(),
+        prisma.provisioningIdempotencyReceipt.count(),
+      ]);
+      expect(after).toEqual(before);
+    } finally {
+      await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS fail_test_provisioning_audit_trigger ON "auth_audit_events";');
+      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS fail_test_provisioning_audit();');
+    }
   });
 
   it('sends invitation intent without returning or persisting the plaintext token, then activates with a user-chosen password', async () => {
@@ -326,6 +465,38 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
     await request(app.getHttpServer()).post(`/api/v1/tenants/${tenantA.id}/memberships/${provisioned.membershipId}/revoke`).set('Authorization', `Bearer ${freshAdmin.accessToken}`).expect(201);
     await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${freshUser.body.accessToken}`).expect(401);
   });
+
+  it('lets TENANT_ADMIN provision STAFF and STAFF authenticate without other roles', async () => {
+    const admin = await loginAdmin(tenantA);
+    const provisioned = await provision(
+      admin,
+      tenantA,
+      'specialist.staff',
+      'staff@example.test',
+      RoleCode.STAFF,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships/${provisioned.membershipId}/invite`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .expect(201);
+    await emailOutbox.deliverPending();
+    const invitationToken = new URL(
+      fakeEmail.messages.at(-1)!.message.text.match(/https:\/\/[^\s]+/)![0],
+    ).searchParams.get('token')!;
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/invitations/accept')
+      .send({ invitationToken, password: 'specialist-password' })
+      .expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        tenantHandle: tenantA.handle,
+        identifier: 'specialist.staff',
+        password: 'specialist-password',
+      })
+      .expect(200);
+    expect(login.body.activeMembership.roles).toEqual([RoleCode.STAFF]);
+  });
 });
 
 async function loginAdmin(tenant: { id: string; handle: string }): Promise<{ accessToken: string; sessionId: string }> {
@@ -350,6 +521,7 @@ async function provision(
 }
 
 async function clearDatabase(prisma: PrismaClient): Promise<void> {
+  await prisma.provisioningIdempotencyReceipt.deleteMany();
   await prisma.outboxEvent.deleteMany();
   await prisma.authAuditEvent.deleteMany();
   await prisma.invitation.deleteMany();

@@ -37,9 +37,9 @@ Messages are safe for users. Secret values, internal SQL details, account-existe
 
 The intended frontend topology is:
 
-| Credential | Browser custody | Identity contract |
-| --- | --- | --- |
-| Access token | Frontend memory only | Use `Authorization: Bearer` for authenticated API calls; never persist it in browser storage. |
+| Credential    | Browser custody                 | Identity contract                                                                                                         |
+| ------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Access token  | Frontend memory only            | Use `Authorization: Bearer` for authenticated API calls; never persist it in browser storage.                             |
 | Refresh token | Identity `HttpOnly` cookie only | Use `credentials: 'include'` for Identity login, refresh, logout, and logout-all. JavaScript cannot read or serialize it. |
 
 The production cookie is host-only, `Secure`, `HttpOnly`, `Path=/`, and `SameSite=Lax` by
@@ -124,6 +124,19 @@ When Académico calls on behalf of a signed-in tenant administrator, the adapter
 ### `POST /api/v1/tenants/{tenantId}/memberships`
 
 Creates a membership for an existing user or provisions a new user with a selected username/email. The response contains membership state, assigned roles, and an activation action, never a password.
+
+The optional `Idempotency-Key` header is scoped to this operation, the authenticated
+actor, and the canonical tenant ID. It accepts 1–128 characters matching
+`[A-Za-z0-9._:-]`. For a repeated key, Identity compares a SHA-256 hash of the
+canonical normalized payload (`userId`, username, optional email, and sorted roles):
+
+- the same key and hash replay the exact original `201` response, including generated IDs;
+- the same key with a different hash returns `409 IDEMPOTENCY_CONFLICT`;
+- the operation records and its receipt commit in one PostgreSQL transaction;
+- the receipt stores the payload hash and safe response only, never the request body,
+  password, invitation, activation, refresh, or service secret.
+
+Without the header, normal uniqueness and membership conflicts remain `409 CONFLICT`.
 
 ### `POST /api/v1/tenants/{tenantId}/memberships/{membershipId}/invite`
 
@@ -238,7 +251,52 @@ tenant realm. Unknown or structurally unusable session IDs return the safe `404 
 envelope. The response contains no access/refresh token, credential, login identifier, or PII.
 This online check complements and does not replace normal JWT validation by Académico.
 
-Both internal routes require `X-Request-Id` correlation (generated when absent), reject browser
+### `POST /internal/v1/tenant-memberships/verify`
+
+Restricted exact verification for an Académico-owned sensitive module. It uses
+the same service credential and current actor tuple as the other internal
+operations. Identity revalidates the actor's active session, selected active
+membership and tenant; a `TENANT_ADMIN` role is deliberately not required
+because Académico owns the module-specific authorization.
+
+The request contains only `actor` and one exact `targetIdentityUserId`. Identity
+looks for that target in the actor's exact tenant and returns minimal opaque
+membership proof only when user, membership and tenant are all `ACTIVE`:
+
+```json
+{
+  "verified": true,
+  "identityUserId": "75fb03af-06d8-424a-98d6-f36b8629638a",
+  "membershipId": "87a170d8-c44c-41ae-82a9-d64ff63e147c",
+  "tenantId": "e5108766-f8e9-4778-9833-92d7d9ca3194",
+  "membershipStatus": "ACTIVE",
+  "roles": ["TEACHER"]
+}
+```
+
+This verification endpoint does not list/search users, return PII, accept a
+requested role, or mutate membership. Cross-tenant and inactive failures use the
+same non-enumerating 404 response.
+
+### `POST /internal/v1/tenant-memberships/resolve-eligible-personnel`
+
+Endpoint S2S no enumerativo para altas DIE. Usa el mismo bearer de servicio
+restringido y rotatable. Recibe el contexto exacto del actor y un
+`institutionalUsername` exacto; Identity revalida el actor y deriva el tenant de
+su membership activa. No acepta tenant ni IDs del objetivo desde el navegador.
+
+Sólo responde 200 para usuario, tenant y membership ACTIVE con al menos uno de
+`STAFF`, `TEACHER` o `TENANT_ADMIN`, y sin `STUDENT` ni `GUARDIAN` en
+esa misma membership. Desconocido, inactivo, excluido y cross-tenant devuelven el
+mismo `IDENTITY_LINK_NOT_VERIFIED`. No existe variante de listado o búsqueda
+parcial. La respuesta contiene IDs opacos, membership exacta, username normalizado
+y roles actuales. El username puede ser información personal y no se incluye en
+logs, auditoría ni errores.
+
+Académico must enforce its local DIE capability before calling this resolution
+and again for later access.
+
+All internal routes require `X-Request-Id` correlation (generated when absent), reject browser
 `Origin` requests, enforce bounded bodies/queries and dedicated throttling, and are excluded from
 the browser-oriented public OpenAPI surface.
 
@@ -265,14 +323,14 @@ Events are integration signals, not authorization proof. Consumers validate the 
 
 ## Contract examples and status codes
 
-| Condition | HTTP | Stable code |
-| --- | ---: | --- |
-| Successful login/activation | 200/201 | — |
-| Invalid credentials, unknown user, disabled account | 401 | `AUTHENTICATION_FAILED` |
-| Missing or expired access token | 401 | `TOKEN_INVALID` |
-| Valid identity but insufficient role/context | 403 | `FORBIDDEN` |
-| Resource/membership not visible in current context | 404 | `NOT_FOUND` |
-| Membership selection needed | 409 | `MEMBERSHIP_SELECTION_REQUIRED` |
-| Expired/consumed invitation or activation challenge | 410 | `ACTIVATION_EXPIRED` |
-| Brute-force or abuse throttle | 429 | `RATE_LIMITED` |
-| Duplicate idempotency key with conflicting payload | 409 | `IDEMPOTENCY_CONFLICT` |
+| Condition                                           |    HTTP | Stable code                     |
+| --------------------------------------------------- | ------: | ------------------------------- |
+| Successful login/activation                         | 200/201 | —                               |
+| Invalid credentials, unknown user, disabled account |     401 | `AUTHENTICATION_FAILED`         |
+| Missing or expired access token                     |     401 | `TOKEN_INVALID`                 |
+| Valid identity but insufficient role/context        |     403 | `FORBIDDEN`                     |
+| Resource/membership not visible in current context  |     404 | `NOT_FOUND`                     |
+| Membership selection needed                         |     409 | `MEMBERSHIP_SELECTION_REQUIRED` |
+| Expired/consumed invitation or activation challenge |     410 | `ACTIVATION_EXPIRED`            |
+| Brute-force or abuse throttle                       |     429 | `RATE_LIMITED`                  |
+| Duplicate idempotency key with conflicting payload  |     409 | `IDEMPOTENCY_CONFLICT`          |

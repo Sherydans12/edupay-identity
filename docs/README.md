@@ -27,7 +27,7 @@ Implementation notes that do not replace the accepted baseline:
 - Email is optional. Institutional username is a first-class login identifier.
 - A client-provided `tenantId` is never trusted as authorization context.
 - The canonical ecosystem tenant identifier is the same stable logical identifier in Identity's `TenantRealm` and Académico's tenant record. Databases remain independent, have no cross-service foreign keys, and exchange the identifier only through authenticated integration contracts.
-- MVP roles are `SYSTEM_ADMIN`, `TENANT_ADMIN`, `TEACHER`, and `STUDENT`; `GUARDIAN` remains a future-compatible role with no MVP UI.
+- Tenant roles include `TENANT_ADMIN`, `TEACHER`, `STAFF`, `STUDENT`, and `GUARDIAN`. `STAFF` authenticates as tenant personnel but grants no application capability by itself.
 - Identity grants tenant membership roles only. Académico decides subject, roster, learning-content, assignment, and submission access through resource policies.
 - `SYSTEM_ADMIN` does not automatically become a tenant member. Tenant support requires an explicit elevated support context, reason, and audit record. User impersonation is out of scope for MVP.
 - Access JWTs are asymmetric-signed and expire within 10 minutes. Refresh tokens are opaque, rotated, hashed at rest, and family-revoking on reuse; browser refresh tokens use `HttpOnly` and `Secure` cookies where topology permits.
