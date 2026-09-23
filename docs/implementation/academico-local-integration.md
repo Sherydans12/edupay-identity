@@ -58,3 +58,9 @@ For rotation, deploy Identity with a new current token, the old value in
 `IDENTITY_ACADEMICO_SERVICE_TOKEN_PREVIOUS_EXPIRES_AT` no more than 24 hours ahead. Update every
 Académico instance, verify calls with the new value, then remove the previous value and expiry
 before the deadline. Never place either value in logs or tickets.
+
+Para DIE, Identity nuevo se despliega antes que Académico. La resolución exacta
+`POST /internal/v1/tenant-memberships/resolve-eligible-personnel` debe estar
+operativa antes de habilitar altas `STAFF`. Después de crear memberships STAFF no
+se vuelve a un binario Identity que desconozca ese enum; se conserva la versión
+nueva o se aplica una corrección hacia adelante.
