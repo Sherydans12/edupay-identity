@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { SafeHttpException } from '../common/safe-http.exception.js';
 import {
@@ -14,6 +15,7 @@ import type {
   ExpectedAcademicRole,
   InternalActorDto,
   ResolveIdentityUserDto,
+  ResolveEligiblePersonnelDto,
   VerifyTenantMembershipDto,
 } from './internal-academic.dto.js';
 
@@ -52,6 +54,10 @@ export interface VerifiedTenantMembership {
   tenantId: string;
   membershipStatus: typeof MembershipStatus.ACTIVE;
   roles: RoleCode[];
+}
+
+export interface ResolvedEligiblePersonnel extends VerifiedTenantMembership {
+  institutionalUsername: string;
 }
 
 @Injectable()
@@ -228,6 +234,89 @@ export class InternalAcademicService {
       membershipId: target.id,
       tenantId: target.tenantRealmId,
       membershipStatus: MembershipStatus.ACTIVE,
+      roles,
+    };
+  }
+
+  async resolveEligiblePersonnel(
+    input: ResolveEligiblePersonnelDto,
+    requestId: string,
+    sourceAddress: string,
+  ): Promise<ResolvedEligiblePersonnel> {
+    const username = input.institutionalUsername.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+    const targetKey = createHash('sha256').update(username).digest('base64url');
+    await this.assertRateLimit([
+      `resolve-personnel:source:${sourceAddress}`,
+      `resolve-personnel:actor-session:${input.actor.sessionId}`,
+      `resolve-personnel:target:${targetKey}`,
+    ]);
+    const actor = await this.revalidateActor(input.actor, requestId, false);
+    const identifier = await this.prisma.loginIdentifier.findFirst({
+      where: {
+        tenantRealmId: actor.tenantId,
+        kind: 'USERNAME',
+        normalizedValue: username,
+      },
+      include: {
+        user: {
+          include: {
+            memberships: {
+              where: { tenantRealmId: actor.tenantId },
+              include: {
+                tenantRealm: true,
+                roles: { include: { role: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const target = identifier?.user.memberships[0];
+    const roles = target?.roles.map(({ role }) => role.code).sort() ?? [];
+    const eligibleRole = roles.some((role) =>
+      role === RoleCode.STAFF || role === RoleCode.TEACHER || role === RoleCode.TENANT_ADMIN,
+    );
+    const excludedRole = roles.some((role) => role === RoleCode.STUDENT || role === RoleCode.GUARDIAN);
+    const verified =
+      identifier != null &&
+      identifier.user.status === IdentityUserStatus.ACTIVE &&
+      target != null &&
+      target.status === MembershipStatus.ACTIVE &&
+      target.tenantRealm.status === TenantRealmStatus.ACTIVE &&
+      eligibleRole &&
+      !excludedRole;
+    if (!verified || !identifier || !target) {
+      await this.audit.record({
+        eventType: 'INTERNAL_ELIGIBLE_PERSONNEL_RESOLVE_DENIED',
+        outcome: AuditOutcome.DENIED,
+        actorUserId: actor.identityUserId,
+        tenantRealmId: actor.tenantId,
+        sessionId: actor.sessionId,
+        requestId,
+        metadata: { category: 'target-verification' },
+      });
+      this.linkNotVerified();
+    }
+    await this.audit.record({
+      eventType: 'INTERNAL_ELIGIBLE_PERSONNEL_RESOLVED',
+      outcome: AuditOutcome.SUCCESS,
+      actorUserId: actor.identityUserId,
+      tenantRealmId: actor.tenantId,
+      sessionId: actor.sessionId,
+      requestId,
+      metadata: {
+        targetIdentityUserId: target.userId,
+        targetMembershipId: target.id,
+        roleCount: roles.length,
+      },
+    });
+    return {
+      verified: true,
+      identityUserId: target.userId,
+      membershipId: target.id,
+      tenantId: target.tenantRealmId,
+      membershipStatus: MembershipStatus.ACTIVE,
+      institutionalUsername: username,
       roles,
     };
   }

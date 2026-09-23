@@ -107,7 +107,7 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
     tenantA = { id: randomUUID(), handle: `lifecycle-a-${randomUUID().slice(0, 8)}` };
     tenantB = { id: randomUUID(), handle: `lifecycle-b-${randomUUID().slice(0, 8)}` };
     await prisma.tenantRealm.createMany({ data: [tenantA, tenantB] });
-    for (const code of [RoleCode.TENANT_ADMIN, RoleCode.STUDENT, RoleCode.TEACHER]) {
+    for (const code of [RoleCode.TENANT_ADMIN, RoleCode.STUDENT, RoleCode.TEACHER, RoleCode.STAFF]) {
       await prisma.role.create({ data: { id: randomUUID(), code, scope: RoleScope.TENANT } });
     }
     adminPassword = 'admin-lifecycle-password';
@@ -325,6 +325,38 @@ describeWithDatabase('account lifecycle (PostgreSQL integration)', () => {
     const freshUser = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ tenantHandle: tenantA.handle, identifier: 'managed.user', password: 'managed-password' }).expect(200);
     await request(app.getHttpServer()).post(`/api/v1/tenants/${tenantA.id}/memberships/${provisioned.membershipId}/revoke`).set('Authorization', `Bearer ${freshAdmin.accessToken}`).expect(201);
     await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${freshUser.body.accessToken}`).expect(401);
+  });
+
+  it('lets TENANT_ADMIN provision STAFF and STAFF authenticate without other roles', async () => {
+    const admin = await loginAdmin(tenantA);
+    const provisioned = await provision(
+      admin,
+      tenantA,
+      'specialist.staff',
+      'staff@example.test',
+      RoleCode.STAFF,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/tenants/${tenantA.id}/memberships/${provisioned.membershipId}/invite`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .expect(201);
+    await emailOutbox.deliverPending();
+    const invitationToken = new URL(
+      fakeEmail.messages.at(-1)!.message.text.match(/https:\/\/[^\s]+/)![0],
+    ).searchParams.get('token')!;
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/invitations/accept')
+      .send({ invitationToken, password: 'specialist-password' })
+      .expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        tenantHandle: tenantA.handle,
+        identifier: 'specialist.staff',
+        password: 'specialist-password',
+      })
+      .expect(200);
+    expect(login.body.activeMembership.roles).toEqual([RoleCode.STAFF]);
   });
 });
 

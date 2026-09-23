@@ -55,6 +55,10 @@ export function configureApplication(app: INestApplication): void {
         path: 'internal/v1/tenant-memberships/verify',
         method: RequestMethod.POST,
       },
+      {
+        path: 'internal/v1/tenant-memberships/resolve-eligible-personnel',
+        method: RequestMethod.POST,
+      },
     ],
   });
   app.enableVersioning({

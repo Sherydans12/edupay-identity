@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsUUID, ValidateNested } from 'class-validator';
+import { IsIn, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { RoleCode } from '../generated/prisma/enums.js';
 
 export type ExpectedAcademicRole = typeof RoleCode.STUDENT | typeof RoleCode.TEACHER;
@@ -42,4 +42,15 @@ export class VerifyTenantMembershipDto {
 
   @IsUUID('4')
   targetIdentityUserId!: string;
+}
+
+export class ResolveEligiblePersonnelDto {
+  @ValidateNested()
+  @Type(() => InternalActorDto)
+  actor!: InternalActorDto;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  institutionalUsername!: string;
 }

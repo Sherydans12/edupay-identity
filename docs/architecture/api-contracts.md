@@ -261,12 +261,29 @@ membership proof only when user, membership and tenant are all `ACTIVE`:
 }
 ```
 
-It does not list/search users, return PII, accept a requested role, or mutate a
-membership. Cross-tenant and inactive target failures use the same non-enumerating
-404 response. Académico must derive the target ID from its own tenant-scoped record
-and enforce its local capability before and after this verification.
+This verification endpoint does not list/search users, return PII, accept a
+requested role, or mutate membership. Cross-tenant and inactive failures use the
+same non-enumerating 404 response.
 
-Both internal routes require `X-Request-Id` correlation (generated when absent), reject browser
+### `POST /internal/v1/tenant-memberships/resolve-eligible-personnel`
+
+Endpoint S2S no enumerativo para altas DIE. Usa el mismo bearer de servicio
+restringido y rotatable. Recibe el contexto exacto del actor y un
+`institutionalUsername` exacto; Identity revalida el actor y deriva el tenant de
+su membership activa. No acepta tenant ni IDs del objetivo desde el navegador.
+
+Sólo responde 200 para usuario, tenant y membership ACTIVE con al menos uno de
+`STAFF`, `TEACHER` o `TENANT_ADMIN`, y sin `STUDENT` ni `GUARDIAN` en
+esa misma membership. Desconocido, inactivo, excluido y cross-tenant devuelven el
+mismo `IDENTITY_LINK_NOT_VERIFIED`. No existe variante de listado o búsqueda
+parcial. La respuesta contiene IDs opacos, membership exacta, username normalizado
+y roles actuales. El username puede ser información personal y no se incluye en
+logs, auditoría ni errores.
+
+Académico must enforce its local DIE capability before calling this resolution
+and again for later access.
+
+All internal routes require `X-Request-Id` correlation (generated when absent), reject browser
 `Origin` requests, enforce bounded bodies/queries and dedicated throttling, and are excluded from
 the browser-oriented public OpenAPI surface.
 

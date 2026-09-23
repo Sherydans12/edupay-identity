@@ -33,6 +33,7 @@ enum MembershipStatus {
 enum RoleCode {
   SYSTEM_ADMIN
   TENANT_ADMIN
+  STAFF
   TEACHER
   STUDENT
   GUARDIAN

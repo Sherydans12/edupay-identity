@@ -13,7 +13,7 @@ import {
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import { ResolveIdentityUserDto, VerifyTenantMembershipDto } from './internal-academic.dto.js';
+import { ResolveEligiblePersonnelDto, ResolveIdentityUserDto, VerifyTenantMembershipDto } from './internal-academic.dto.js';
 import {
   InternalAcademicService,
   type InternalSessionStatus,
@@ -48,6 +48,13 @@ export class InternalAcademicController {
   @Header('Cache-Control', 'no-store')
   verifyTenantMembership(@Body() input: VerifyTenantMembershipDto, @Req() request: Request) {
     return this.integration.verifyTenantMembership(input, request.requestId, this.sourceAddress(request));
+  }
+
+  @Post('tenant-memberships/resolve-eligible-personnel')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  resolveEligiblePersonnel(@Body() input: ResolveEligiblePersonnelDto, @Req() request: Request) {
+    return this.integration.resolveEligiblePersonnel(input, request.requestId, this.sourceAddress(request));
   }
 
   private sourceAddress(request: Request): string {

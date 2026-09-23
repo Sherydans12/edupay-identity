@@ -55,7 +55,11 @@ interface MembershipDetails {
   roles: Array<{ role: { code: RoleCode } }>;
 }
 
-const MANAGED_ROLES = new Set<RoleCode>([RoleCode.STUDENT, RoleCode.TEACHER]);
+const MANAGED_ROLES = new Set<RoleCode>([
+  RoleCode.STUDENT,
+  RoleCode.TEACHER,
+  RoleCode.STAFF,
+]);
 const TOKEN_EXPIRED_MESSAGE = 'The requested credential is expired or no longer available.';
 
 @Injectable()
