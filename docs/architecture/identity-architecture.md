@@ -107,7 +107,7 @@ erDiagram
     }
 ```
 
-`TENANT_ADMIN`, `TEACHER`, `STUDENT`, and future `GUARDIAN` assignments are membership-scoped. `SYSTEM_ADMIN` is a separate platform-scoped assignment and is not silently created by adding a tenant membership. If a system administrator acts inside a tenant, Identity creates or authorizes an explicit elevated support context with a reason and audit record.
+`TENANT_ADMIN`, `TEACHER`, `STAFF`, `STUDENT`, and `GUARDIAN` assignments are membership-scoped. `SYSTEM_ADMIN` is a separate platform-scoped assignment and is not silently created by adding a tenant membership. If a system administrator acts inside a tenant, Identity creates or authorizes an explicit elevated support context with a reason and audit record.
 
 ### Aggregate and record responsibilities
 
