@@ -1,9 +1,22 @@
 # EduPay Identity documentation
 
-Status: approved Identity architecture baseline; implementation may begin only within these boundaries
-Accepted: 2026-08-08
+Status: implemented Identity service; the current documented release is dated 2026-09-24.
+Latest reported Git `origin/main` on 2026-09-24: `57b8827008c4a7b92c60a435b3fb1bc4f7554492`. This Git ref is not the deployed image identity. The last runtime evidence is the linked release closeout; this edit does not recheck Coolify.
 
 EduPay Identity is an independent centralized identity service for EduPay ecosystem applications. It is the source of truth for authentication and access-management implementation details. EduPay Académico consumes this service through explicit contracts and remains the owner of academic records.
+
+## Empieza aquí
+
+- [Mapa transversal: dominios, integraciones, estado y pendientes](https://github.com/Sherydans12/edupay-academico/blob/main/docs/architecture/edupay-ecosystem-architecture.md)
+- [Release DIE y evidencia de producción del 24/09](operations/die-release-authorization-runbook.md)
+- [Arquitectura, contratos y ADRs](architecture/identity-architecture.md), [API](architecture/api-contracts.md), [decisiones](decisions/README.md)
+- [Bootstrap coordinado de tenant Identity/Académico](implementation/production-tenant-bootstrap.md)
+
+El piloto DIE está desplegado como módulo de Académico pero sigue sin
+configuración ni validación con usuarios reales. El release no creó cuentas,
+memberships, perfiles ni expedientes de piloto. La verificación productiva más
+nueva publicada está en [el cierre de release](operations/die-release-authorization-runbook.md)
+y en el [cierre transversal](https://github.com/Sherydans12/edupay-academico/blob/main/docs/operations/die-release-closeout-2026-09-24.md).
 
 ## Reading order
 
@@ -34,6 +47,12 @@ Implementation notes that do not replace the accepted baseline:
 - The existing EduPay administrative authentication remains untouched initially. No migration, federation, or login redesign is part of this repository’s MVP.
 - Restricted Académico verification uses a server-only service credential plus current Identity database reauthorization for human-sensitive link actions; it is not a directory or delegated mutation API.
 
-## Relationship to EduPay Académico
+## Relationship to EduPay Académico and BL-002
 
-The architecture is aligned with the read-only baseline in `C:\Users\nicol\Documents\EduPayAcademico\docs`, especially its system context, identity model, multitenancy rules, security architecture, integration boundary, unresolved decisions, and ADRs 0001–0004 and 0008. No files in that repository are modified by this project.
+Académico consumes Identity through validated JWT/JWKS and bounded internal
+service routes over the private Coolify network. Identity owns authentication
+and membership; Académico owns academic permissions and DIE records. BL-002
+keeps its existing authentication boundary and financial records; the current
+financial projection remains disabled. The [shared ecosystem map](https://github.com/Sherydans12/edupay-academico/blob/main/docs/architecture/edupay-ecosystem-architecture.md)
+is the entry point for cross-repository status. This repository remains
+authoritative for Identity contracts, configuration and local decisions.
