@@ -1,9 +1,47 @@
 # EduPay DIE release authorization runbook
 
-Status: prepared for explicit operator authorization. This procedure does not
-authorize itself. Do not start a merge, registry publish, migration, or redeploy
-until the operator approves the exact SHAs, migrations, configuration checks,
-and resources listed in the approval block below.
+Status: **completed under the operator authorization dated 2026-09-24**. The
+procedure below is retained as the pre-release approval snapshot; do not execute
+it again as a current runbook.
+
+## Identity release result — 2026-09-24
+
+- Identity PR #12 merged at `9ab29bf5edaa0cd780d5f8912441c1735e51d91a`, from
+  approved candidate `93418b68eaf41976b4bc695039afcbc8eab4fdbc`. Its required
+  CI `validate` passed before merge.
+- Active Coolify resource: `0vrvqepcukwcubxga0narorf`. Runtime artifact:
+  `ghcr.io/sherydans12/edupay-identity@sha256:960d326a9199881d54c7fc9611d052be77c0fbdceae4badebfe1208febe5aa01`.
+- The release migration runner was
+  `ghcr.io/sherydans12/edupay-identity-migrate@sha256:ad9edaa31bf01d4916846527041eadd65310ce21454bfb4d419d4ca2bfba9363`.
+  The earlier runner with local image ID
+  `fa88615b0d08abf807ad4667b2812326648fa855aacc6221bb752b35cf2409b7` was
+  retired because it lacked `schema-engine`.
+- Identity applied only `20260924000000_add_staff_role`, checksum
+  `efdf76787689aeb4b765d743cec5501bd5d7c9b33be1d095975a73b484d5c87e`. The
+  ledger is four completed migrations; all three historical rows and checksums
+  remain, including
+  `20260831000000_provisioning_idempotency_receipts` at checksum
+  `c615b7fd9db0ea642ad08fa5981f498dd9a73e97b9db7c0d2d0d2d7cd53eb68b`. That
+  historical migration was not reapplied or resolved.
+- The joint recovery point was `20260924T010020Z`; Identity source was Coolify
+  PostgreSQL resource `bluypktxta8uisbrfzu6p9pw`, database `postgres`, schema
+  `public`, with three ledger rows before migration.
+- Health, public/private JWKS, private S2S connectivity and the controlled
+  synthetic nonexistent-username rejection were verified. No account,
+  membership, secret rotation, or real pilot data was created. The scheduler
+  and outbox returned with the runtime; no historical event was replayed.
+- Academic continues to consume Identity over the existing private Coolify
+  network. Manual deploy and the existing network hook remain in use; no public
+  S2S bypass was added. The module is deployed, while pilot setup and validation
+  remain the user's next step.
+
+The companion release closeout and pilot guide are in
+[Académico operations documentation](https://github.com/Sherydans12/edupay-academico/blob/main/docs/operations/die-release-closeout-2026-09-24.md).
+
+## Pre-release authorization snapshot (historical; do not execute)
+
+The steps below record the plan that was reviewed before authorization. Their
+approval block is historical, not a request for another approval.
 
 ## Fixed release inputs
 
