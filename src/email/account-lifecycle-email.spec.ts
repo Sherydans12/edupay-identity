@@ -4,6 +4,7 @@ import {
   createInvitationEmail,
   createPasswordRecoveryEmail,
   escapeHtml,
+  formatPasswordResetExpiration,
   getAccountUiBaseUrl,
 } from './account-lifecycle-email.js';
 import type { Environment } from '../config/environment.js';
@@ -13,6 +14,7 @@ function mockConfig(overrides: Partial<Record<keyof Environment, unknown>> = {})
     IDENTITY_EMAIL_FROM: 'EduPay Identity <identity@edupay.baselogic.cl>',
     IDENTITY_PUBLIC_BASE_URL: 'https://identity.edupay.baselogic.cl',
     IDENTITY_ACCOUNT_UI_BASE_URL: 'https://academico.edupay.baselogic.cl',
+    IDENTITY_PASSWORD_RESET_TTL_SECONDS: 3_600,
     ...overrides,
   };
   return {
@@ -28,6 +30,12 @@ function mockConfig(overrides: Partial<Record<keyof Environment, unknown>> = {})
 }
 
 describe('account lifecycle emails', () => {
+  it('formats password-reset expiration using the configured lifetime', () => {
+    expect(formatPasswordResetExpiration(3_600)).toBe('1 hora');
+    expect(formatPasswordResetExpiration(7_200)).toBe('2 horas');
+    expect(formatPasswordResetExpiration(90)).toBe('90 segundos');
+  });
+
   describe('escapeHtml', () => {
     it('escapes dangerous HTML characters', () => {
       expect(escapeHtml('<script>alert("xss") & \'test\'</script>')).toBe(
@@ -97,6 +105,8 @@ describe('account lifecycle emails', () => {
       // Key copy requirements
       expect(email.html).toContain('Crea una nueva contraseña');
       expect(email.html).toContain('Crear nueva contraseña');
+      expect(email.text).toContain('Este enlace expirará en 1 hora y sólo puede usarse una vez.');
+      expect(email.html).toContain('Este enlace expirará en 1 hora y sólo puede usarse una vez.');
       expect(email.html).toContain('Si no solicitaste este cambio, puedes ignorar este correo');
       expect(email.html).toContain('Si el botón no funciona, copia y pega este enlace en tu navegador');
       expect(email.text).toContain('Aviso de seguridad:');

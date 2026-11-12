@@ -23,6 +23,7 @@ Identity exposes only these service routes outside the browser `/api/v1` surface
 
 - `GET /internal/v1/sessions/{sessionId}/status`;
 - `POST /internal/v1/identity-users/resolve`.
+- `POST /internal/v1/tenant-memberships/verify`.
 
 Académico authenticates with `Authorization: Bearer` using a server-only, randomly generated
 service credential containing at least 32 random bytes. Identity compares fixed-length
@@ -46,6 +47,12 @@ one exact target IdentityUser ID and one expected role (`STUDENT` or `TEACHER`).
 listing, fuzzy search, identifier discovery, or mutation. A target membership may be `ACTIVE`
 or `PENDING_ACTIVATION`; pending verification permits Académico to save its link but grants no
 login or application access.
+
+The tenant-membership verification operation accepts one exact target IdentityUser
+ID and revalidates any active tenant actor, not only an administrator. It exists for
+an Académico-owned sensitive module whose local membership and coordination rules do
+not belong in Identity. It returns only active membership proof and current role codes;
+it cannot list accounts, search identifiers, grant a role, or change a membership.
 
 Internal traffic uses HTTPS and/or a private trusted network in production, correlation IDs,
 bounded request bodies and queries, dedicated internal throttling, safe errors, and

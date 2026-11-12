@@ -19,6 +19,23 @@ export function getAccountUiBaseUrl(config: ConfigService<Environment, true>): s
   return config.getOrThrow('IDENTITY_PUBLIC_BASE_URL').trim().replace(/\/$/, '');
 }
 
+export function formatPasswordResetExpiration(seconds: number): string {
+  const units = [
+    { size: 86_400, singular: 'día', plural: 'días' },
+    { size: 3_600, singular: 'hora', plural: 'horas' },
+    { size: 60, singular: 'minuto', plural: 'minutos' },
+  ];
+
+  for (const unit of units) {
+    if (seconds % unit.size === 0) {
+      const amount = seconds / unit.size;
+      return `${amount} ${amount === 1 ? unit.singular : unit.plural}`;
+    }
+  }
+
+  return `${seconds} segundos`;
+}
+
 interface EmailLayoutOptions {
   brandName?: string | undefined;
   title: string;
@@ -197,12 +214,15 @@ export function createPasswordRecoveryEmail(
 ): EmailMessage {
   const accountUiBase = getAccountUiBaseUrl(config);
   const link = `${accountUiBase}/reset-password?token=${encodeURIComponent(token)}`;
+  const expiration = formatPasswordResetExpiration(
+    config.getOrThrow('IDENTITY_PASSWORD_RESET_TTL_SECONDS'),
+  );
 
   const subject = 'Recupera tu contraseña de EduPay Académico';
   const title = 'Crea una nueva contraseña';
   const lead = 'Recibimos una solicitud para recuperar el acceso a tu cuenta.';
   const actionText = 'Crear nueva contraseña';
-  const supportingText = 'Al ingresar podrás definir una nueva contraseña personal. Por seguridad, tus sesiones anteriores podrían ser revocadas.';
+  const supportingText = `Este enlace expirará en ${expiration} y sólo puede usarse una vez.`;
   const securityNotice = 'Este enlace es personal, de uso único y expirará por motivos de seguridad.';
   const footerText = 'Si no solicitaste este cambio, puedes ignorar este correo. Tu contraseña actual permanecerá segura.';
 

@@ -18,10 +18,7 @@ export function configureApplication(app: INestApplication): void {
     }),
   );
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (error: Error | null, origin?: boolean | string) => void,
-    ) => {
+    origin: (origin: string | undefined, callback: (error: Error | null, origin?: boolean | string) => void) => {
       if (!origin) {
         callback(null, false);
         return;
@@ -37,6 +34,7 @@ export function configureApplication(app: INestApplication): void {
       'Authorization',
       'X-Request-Id',
       'X-EduPay-Client-Type',
+      'Idempotency-Key',
     ],
     exposedHeaders: ['X-Request-Id'],
     maxAge: 600,
@@ -45,8 +43,22 @@ export function configureApplication(app: INestApplication): void {
   app.setGlobalPrefix('api', {
     exclude: [
       { path: '.well-known/jwks.json', method: RequestMethod.GET },
-      { path: 'internal/v1/sessions/:sessionId/status', method: RequestMethod.GET },
-      { path: 'internal/v1/identity-users/resolve', method: RequestMethod.POST },
+      {
+        path: 'internal/v1/sessions/:sessionId/status',
+        method: RequestMethod.GET,
+      },
+      {
+        path: 'internal/v1/identity-users/resolve',
+        method: RequestMethod.POST,
+      },
+      {
+        path: 'internal/v1/tenant-memberships/verify',
+        method: RequestMethod.POST,
+      },
+      {
+        path: 'internal/v1/tenant-memberships/resolve-eligible-personnel',
+        method: RequestMethod.POST,
+      },
     ],
   });
   app.enableVersioning({

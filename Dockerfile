@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS base
+FROM node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS base
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=${PNPM_HOME}:${PATH}
@@ -21,15 +21,24 @@ RUN export DATABASE_URL=postgresql://build.invalid/identity \
 
 FROM dependencies AS migrate
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY prisma.config.ts ./
 COPY prisma ./prisma
+RUN DATABASE_URL=postgresql://build.invalid/identity pnpm prisma:generate \
+  && schema_engine="$(find node_modules -type f -name 'schema-engine*' -perm /111 -print -quit)" \
+  && test -n "$schema_engine" \
+  && case "$schema_engine" in *schema-engine-debian-openssl-3.0.x) ;; *) echo "Unexpected Prisma schema-engine target: $schema_engine" >&2; exit 1 ;; esac \
+  && echo "Prisma schema-engine included: $schema_engine"
 CMD ["pnpm", "prisma:migrate:deploy"]
 
 FROM build AS production-dependencies
 
 RUN pnpm prune --prod
 
-FROM node:22-bookworm-slim AS runtime
+FROM node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3000

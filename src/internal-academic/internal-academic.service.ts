@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { SafeHttpException } from '../common/safe-http.exception.js';
 import {
@@ -14,11 +15,11 @@ import type {
   ExpectedAcademicRole,
   InternalActorDto,
   ResolveIdentityUserDto,
+  ResolveEligiblePersonnelDto,
+  VerifyTenantMembershipDto,
 } from './internal-academic.dto.js';
 
-type LinkableMembershipStatus =
-  | typeof MembershipStatus.ACTIVE
-  | typeof MembershipStatus.PENDING_ACTIVATION;
+type LinkableMembershipStatus = typeof MembershipStatus.ACTIVE | typeof MembershipStatus.PENDING_ACTIVATION;
 
 interface RevalidatedActor {
   identityUserId: string;
@@ -46,6 +47,19 @@ export interface ResolvedIdentityUser {
   roles: ExpectedAcademicRole[];
 }
 
+export interface VerifiedTenantMembership {
+  verified: true;
+  identityUserId: string;
+  membershipId: string;
+  tenantId: string;
+  membershipStatus: typeof MembershipStatus.ACTIVE;
+  roles: RoleCode[];
+}
+
+export interface ResolvedEligiblePersonnel extends VerifiedTenantMembership {
+  institutionalUsername: string;
+}
+
 @Injectable()
 export class InternalAcademicService {
   constructor(
@@ -54,11 +68,7 @@ export class InternalAcademicService {
     private readonly audit: AuditService,
   ) {}
 
-  async sessionStatus(
-    sessionId: string,
-    requestId: string,
-    sourceAddress: string,
-  ): Promise<InternalSessionStatus> {
+  async sessionStatus(sessionId: string, requestId: string, sourceAddress: string): Promise<InternalSessionStatus> {
     await this.assertRateLimit([`status:source:${sourceAddress}`, `status:session:${sessionId}`]);
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
@@ -120,8 +130,7 @@ export class InternalAcademicService {
       target !== null &&
       target.user.status === IdentityUserStatus.ACTIVE &&
       target.tenantRealm.status === TenantRealmStatus.ACTIVE &&
-      (target.status === MembershipStatus.PENDING_ACTIVATION ||
-        target.status === MembershipStatus.ACTIVE) &&
+      (target.status === MembershipStatus.PENDING_ACTIVATION || target.status === MembershipStatus.ACTIVE) &&
       targetRoleCodes.includes(input.expectedRole);
 
     if (!targetIsVerified) {
@@ -132,7 +141,10 @@ export class InternalAcademicService {
         tenantRealmId: actor.tenantId,
         sessionId: actor.sessionId,
         requestId,
-        metadata: { category: 'target-verification', expectedRole: input.expectedRole },
+        metadata: {
+          category: 'target-verification',
+          expectedRole: input.expectedRole,
+        },
       });
       this.linkNotVerified();
     }
@@ -158,14 +170,162 @@ export class InternalAcademicService {
       membershipId: target.id,
       tenantId: target.tenantRealmId,
       membershipStatus:
-        target.status === MembershipStatus.ACTIVE
-          ? MembershipStatus.ACTIVE
-          : MembershipStatus.PENDING_ACTIVATION,
+        target.status === MembershipStatus.ACTIVE ? MembershipStatus.ACTIVE : MembershipStatus.PENDING_ACTIVATION,
       roles: [input.expectedRole],
     };
   }
 
-  private async revalidateActor(actor: InternalActorDto, requestId: string): Promise<RevalidatedActor> {
+  async verifyTenantMembership(
+    input: VerifyTenantMembershipDto,
+    requestId: string,
+    sourceAddress: string,
+  ): Promise<VerifiedTenantMembership> {
+    await this.assertRateLimit([
+      `verify-membership:source:${sourceAddress}`,
+      `verify-membership:actor-session:${input.actor.sessionId}`,
+      `verify-membership:target:${input.targetIdentityUserId}`,
+    ]);
+    const actor = await this.revalidateActor(input.actor, requestId, false);
+    const target = await this.prisma.tenantMembership.findFirst({
+      where: {
+        userId: input.targetIdentityUserId,
+        tenantRealmId: actor.tenantId,
+      },
+      include: {
+        user: true,
+        tenantRealm: true,
+        roles: { include: { role: true } },
+      },
+    });
+    const verified =
+      target !== null &&
+      target.user.status === IdentityUserStatus.ACTIVE &&
+      target.tenantRealm.status === TenantRealmStatus.ACTIVE &&
+      target.status === MembershipStatus.ACTIVE;
+    if (!verified || !target) {
+      await this.audit.record({
+        eventType: 'INTERNAL_TENANT_MEMBERSHIP_VERIFY_DENIED',
+        outcome: AuditOutcome.DENIED,
+        actorUserId: actor.identityUserId,
+        tenantRealmId: actor.tenantId,
+        sessionId: actor.sessionId,
+        requestId,
+        metadata: { category: 'target-verification' },
+      });
+      this.linkNotVerified();
+    }
+    const roles = target.roles.map(({ role }) => role.code).sort();
+    await this.audit.record({
+      eventType: 'INTERNAL_TENANT_MEMBERSHIP_VERIFIED',
+      outcome: AuditOutcome.SUCCESS,
+      actorUserId: actor.identityUserId,
+      tenantRealmId: actor.tenantId,
+      sessionId: actor.sessionId,
+      requestId,
+      metadata: {
+        targetIdentityUserId: target.userId,
+        targetMembershipId: target.id,
+        roleCount: roles.length,
+      },
+    });
+    return {
+      verified: true,
+      identityUserId: target.userId,
+      membershipId: target.id,
+      tenantId: target.tenantRealmId,
+      membershipStatus: MembershipStatus.ACTIVE,
+      roles,
+    };
+  }
+
+  async resolveEligiblePersonnel(
+    input: ResolveEligiblePersonnelDto,
+    requestId: string,
+    sourceAddress: string,
+  ): Promise<ResolvedEligiblePersonnel> {
+    const username = input.institutionalUsername.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+    const targetKey = createHash('sha256').update(username).digest('base64url');
+    await this.assertRateLimit([
+      `resolve-personnel:source:${sourceAddress}`,
+      `resolve-personnel:actor-session:${input.actor.sessionId}`,
+      `resolve-personnel:target:${targetKey}`,
+    ]);
+    const actor = await this.revalidateActor(input.actor, requestId, false);
+    const identifier = await this.prisma.loginIdentifier.findFirst({
+      where: {
+        tenantRealmId: actor.tenantId,
+        kind: 'USERNAME',
+        normalizedValue: username,
+      },
+      include: {
+        user: {
+          include: {
+            memberships: {
+              where: { tenantRealmId: actor.tenantId },
+              include: {
+                tenantRealm: true,
+                roles: { include: { role: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const target = identifier?.user.memberships[0];
+    const roles = target?.roles.map(({ role }) => role.code).sort() ?? [];
+    const eligibleRole = roles.some((role) =>
+      role === RoleCode.STAFF || role === RoleCode.TEACHER || role === RoleCode.TENANT_ADMIN,
+    );
+    const excludedRole = roles.some((role) => role === RoleCode.STUDENT || role === RoleCode.GUARDIAN);
+    const verified =
+      identifier != null &&
+      identifier.user.status === IdentityUserStatus.ACTIVE &&
+      target != null &&
+      target.status === MembershipStatus.ACTIVE &&
+      target.tenantRealm.status === TenantRealmStatus.ACTIVE &&
+      eligibleRole &&
+      !excludedRole;
+    if (!verified || !identifier || !target) {
+      await this.audit.record({
+        eventType: 'INTERNAL_ELIGIBLE_PERSONNEL_RESOLVE_DENIED',
+        outcome: AuditOutcome.DENIED,
+        actorUserId: actor.identityUserId,
+        tenantRealmId: actor.tenantId,
+        sessionId: actor.sessionId,
+        requestId,
+        metadata: { category: 'target-verification' },
+      });
+      this.linkNotVerified();
+    }
+    await this.audit.record({
+      eventType: 'INTERNAL_ELIGIBLE_PERSONNEL_RESOLVED',
+      outcome: AuditOutcome.SUCCESS,
+      actorUserId: actor.identityUserId,
+      tenantRealmId: actor.tenantId,
+      sessionId: actor.sessionId,
+      requestId,
+      metadata: {
+        targetIdentityUserId: target.userId,
+        targetMembershipId: target.id,
+        roleCount: roles.length,
+      },
+    });
+    return {
+      verified: true,
+      identityUserId: target.userId,
+      membershipId: target.id,
+      tenantId: target.tenantRealmId,
+      membershipStatus: MembershipStatus.ACTIVE,
+      institutionalUsername: username,
+      roles,
+    };
+  }
+
+  private async revalidateActor(
+    actor: InternalActorDto,
+    requestId: string,
+    requireTenantAdmin = true,
+  ): Promise<RevalidatedActor> {
     const session = await this.prisma.session.findUnique({
       where: { id: actor.sessionId },
       include: {
@@ -190,7 +350,7 @@ export class InternalAcademicService {
       membership.tenantRealmId === actor.tenantId &&
       membership.status === MembershipStatus.ACTIVE &&
       membership.tenantRealm.status === TenantRealmStatus.ACTIVE &&
-      membership.roles.some(({ role }) => role.code === RoleCode.TENANT_ADMIN);
+      (!requireTenantAdmin || membership.roles.some(({ role }) => role.code === RoleCode.TENANT_ADMIN));
 
     if (!actorIsAuthorized || !session || !membership) {
       await this.audit.record({
@@ -215,22 +375,17 @@ export class InternalAcademicService {
   }
 
   private async assertRateLimit(keys: ReadonlyArray<string>): Promise<void> {
-    const decision = await this.rateLimits.consume({ bucket: 'internal', keys });
+    const decision = await this.rateLimits.consume({
+      bucket: 'internal',
+      keys,
+    });
     if (!decision.allowed) {
-      throw new SafeHttpException(
-        HttpStatus.TOO_MANY_REQUESTS,
-        'RATE_LIMITED',
-        'Too many requests were received.',
-      );
+      throw new SafeHttpException(HttpStatus.TOO_MANY_REQUESTS, 'RATE_LIMITED', 'Too many requests were received.');
     }
   }
 
   private notFound(): never {
-    throw new SafeHttpException(
-      HttpStatus.NOT_FOUND,
-      'NOT_FOUND',
-      'The requested resource was not found.',
-    );
+    throw new SafeHttpException(HttpStatus.NOT_FOUND, 'NOT_FOUND', 'The requested resource was not found.');
   }
 
   private linkNotVerified(): never {
