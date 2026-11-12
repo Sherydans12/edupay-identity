@@ -102,6 +102,7 @@ export class EmailOutboxService
   private readonly maxAttempts: number;
   private readonly baseBackoffSeconds: number;
   private timer: NodeJS.Timeout | undefined;
+  private drainPromise: Promise<{ published: number; failed: number }> | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -114,9 +115,13 @@ export class EmailOutboxService
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.deliverPending().catch(() => {});
+    await this.deliverPending().catch(() => {
+      this.logger.error('Initial Identity email outbox sweep failed.');
+    });
     this.timer = setInterval(() => {
-      void this.deliverPending().catch(() => {});
+      void this.deliverPending().catch(() => {
+        this.logger.error('Scheduled Identity email outbox sweep failed.');
+      });
     }, 5_000);
     this.timer.unref();
   }
@@ -143,12 +148,22 @@ export class EmailOutboxService
       },
     });
     setImmediate(() => {
-      void this.deliverPending().catch(() => {});
+      void this.deliverPending().catch(() => {
+        this.logger.error('Immediate Identity email outbox sweep failed.');
+      });
     });
     return created;
   }
 
   async deliverPending(limit = 20): Promise<{ published: number; failed: number }> {
+    if (this.drainPromise) return this.drainPromise;
+    this.drainPromise = this.deliverPendingOnce(limit).finally(() => {
+      this.drainPromise = undefined;
+    });
+    return this.drainPromise;
+  }
+
+  private async deliverPendingOnce(limit: number): Promise<{ published: number; failed: number }> {
     const events = await this.prisma.outboxEvent.findMany({
       where: {
         eventType: { startsWith: 'identity.email.' },
@@ -181,7 +196,7 @@ export class EmailOutboxService
         const retryable = !(error instanceof EmailDeliveryError) || error.retryable;
         const terminal = !retryable || attemptCount >= event.maxAttempts;
         const delaySeconds = this.baseBackoffSeconds * 2 ** Math.min(attemptCount - 1, 8);
-        const safeError = error instanceof EmailDeliveryError ? error.safeCode : 'EMAIL_DELIVERY_FAILED';
+        const safeError = error instanceof EmailDeliveryError ? error.safeSummary : 'EMAIL_DELIVERY_FAILED';
         await this.prisma.outboxEvent.updateMany({
           where: { id: event.id, status: OutboxStatus.PENDING },
           data: {

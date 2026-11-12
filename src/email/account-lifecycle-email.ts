@@ -48,7 +48,7 @@ function renderEmailLayout(options: EmailLayoutOptions): string {
   const title = escapeHtml(options.title);
   const lead = escapeHtml(options.lead);
   const actionText = escapeHtml(options.actionText);
-  const actionUrl = encodeURI(options.actionUrl);
+  const actionUrl = escapeHtml(encodeURI(options.actionUrl));
   const rawUrlEscaped = escapeHtml(options.actionUrl);
   const supportingText = escapeHtml(options.supportingText);
   const securityNotice = escapeHtml(options.securityNotice);

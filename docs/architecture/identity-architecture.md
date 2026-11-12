@@ -173,7 +173,7 @@ The client may request a context; it cannot grant itself a context. The resultin
 
 1. An authorized tenant administrator creates or selects a user and creates a tenant membership with an intended role.
 2. Identity creates a pending membership and a one-time invitation containing a random opaque token. Only its hash is persisted.
-3. Identity places an invitation email in its notification outbox; the Identity notification worker sends it through Resend.
+3. Identity places an invitation email in its notification outbox; the API sweeper and the standalone Identity email runner deliver it through Resend with the same stable provider idempotency key.
 4. The recipient opens the invitation, confirms the safe tenant context, and submits a new password.
 5. Identity verifies token expiry, single use, membership status, and password policy; sets the credential, marks the membership active, consumes the invitation, and emits an audit event.
 6. The user starts a normal session. The administrator never knows or sets the permanent password.

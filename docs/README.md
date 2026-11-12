@@ -1,6 +1,6 @@
 # EduPay Identity documentation
 
-Status: approved Identity architecture baseline; implementation may begin only within these boundaries
+Status: approved Identity architecture baseline; implementation proceeds within these boundaries. Source changes in `main` do not by themselves establish that a production release was deployed.
 Accepted: 2026-08-08
 
 EduPay Identity is an independent centralized identity service for EduPay ecosystem applications. It is the source of truth for authentication and access-management implementation details. EduPay Académico consumes this service through explicit contracts and remains the owner of academic records.
@@ -15,8 +15,10 @@ EduPay Identity is an independent centralized identity service for EduPay ecosys
 
 Implementation notes that do not replace the accepted baseline:
 
-- [Application bootstrap](implementation/bootstrap.md)
 - [Production tenant-admin bootstrap](implementation/production-tenant-bootstrap.md)
+  covers invitation delivery and the `IDENTITY_ACCOUNT_UI_BASE_URL` that must
+  point to the web app serving activation and password-reset screens.
+- [Application bootstrap](implementation/bootstrap.md)
 - [Operator email correction](implementation/operator-email-correction.md)
 
 ## Governing constraints

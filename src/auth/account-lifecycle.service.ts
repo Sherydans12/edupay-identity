@@ -592,6 +592,7 @@ export class AccountLifecycleService {
     sourceAddress: string,
   ): Promise<Record<string, unknown>> {
     this.assertTenantAdmin(principal, tenantId);
+    this.assertRecentAuthentication(principal);
     await this.assertRateLimit('activation', [sourceAddress, principal.userId, membershipId]);
     const issued = await this.opaqueTokens.issue('act');
     const activationCode = issued.revealOnce();
