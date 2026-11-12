@@ -93,6 +93,7 @@ export const environmentSchema = z
     RESEND_API_KEY: z.string().optional().default(''),
     IDENTITY_EMAIL_FROM: z.string().min(3).default('EduPay Identity <no-reply@identity.invalid>'),
     IDENTITY_PUBLIC_BASE_URL: z.url().default('http://localhost:3000'),
+    IDENTITY_ACCOUNT_UI_BASE_URL: z.url().optional(),
     IDENTITY_TRUSTED_WEB_ORIGINS: trustedWebOriginsFromEnvironment,
     IDENTITY_COOKIE_SECURE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
     IDENTITY_REFRESH_COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
@@ -112,6 +113,16 @@ export const environmentSchema = z
         path: ['IDENTITY_COOKIE_SECURE'],
         message: 'must be true in production',
       });
+    }
+    if (environment.NODE_ENV === 'production') {
+      const accountUiBase = environment.IDENTITY_ACCOUNT_UI_BASE_URL ?? environment.IDENTITY_PUBLIC_BASE_URL;
+      if (!accountUiBase.startsWith('https://')) {
+        context.addIssue({
+          code: 'custom',
+          path: [environment.IDENTITY_ACCOUNT_UI_BASE_URL ? 'IDENTITY_ACCOUNT_UI_BASE_URL' : 'IDENTITY_PUBLIC_BASE_URL'],
+          message: 'must use https:// in production',
+        });
+      }
     }
     if (environment.IDENTITY_REFRESH_COOKIE_SAMESITE === 'none' && !environment.IDENTITY_COOKIE_SECURE) {
       context.addIssue({

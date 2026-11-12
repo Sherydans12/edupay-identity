@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Environment } from '../config/environment.js';
 import { EmailDeliveryAdapter, EmailDeliveryError } from './email.types.js';
 import type { SafeProviderDiagnostic } from './email.types.js';
+import type { EmailDeliveryResult, EmailMessage } from './email.types.js';
 
 const SAFE_PROVIDER_CODE = /^[a-z0-9][a-z0-9_.-]{0,63}$/i;
 
@@ -35,7 +36,6 @@ function safeProviderDiagnostic(body: unknown): SafeProviderDiagnostic | undefin
   if (message) diagnostic.message = message;
   return diagnostic;
 }
-import type { EmailDeliveryResult, EmailMessage } from './email.types.js';
 
 @Injectable()
 export class ResendEmailAdapter extends EmailDeliveryAdapter {
@@ -69,12 +69,18 @@ export class ResendEmailAdapter extends EmailDeliveryAdapter {
       } catch {
         body = undefined;
       }
+      const diagnostic = safeProviderDiagnostic(body);
+      const concurrentIdempotencyRequest =
+        response.status === 409 &&
+        diagnostic?.code === 'concurrent_idempotent_requests';
       throw new EmailDeliveryError(
         response.status >= 400 && response.status < 500 && response.status !== 429
-          ? 'RESEND_PROVIDER_REJECTED'
+          ? concurrentIdempotencyRequest
+            ? 'RESEND_IDEMPOTENCY_CONCURRENT'
+            : 'RESEND_PROVIDER_REJECTED'
           : 'RESEND_PROVIDER_UNAVAILABLE',
-        response.status >= 500 || response.status === 429,
-        safeProviderDiagnostic(body),
+        response.status >= 500 || response.status === 429 || concurrentIdempotencyRequest,
+        diagnostic,
       );
     }
 

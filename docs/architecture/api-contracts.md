@@ -316,8 +316,10 @@ Identity may publish versioned events after durable state changes:
 Identity email delivery uses the same durable `OutboxEvent` foundation with the internal event types
 `identity.email.invitation.v1` and `identity.email.password-recovery.v1`. Email rows carry a unique
 delivery key, bounded attempt count, provider response ID, sanitized last error, and pending/published/
-failed state. The message body is protected in the outbox payload and is delivered only by the Identity
-Resend adapter; invitation and reset domain records retain only one-time secret hashes.
+failed state. The message body is protected in the outbox payload. The API's in-process sweeper and
+the standalone Identity email runner may both process pending rows; both pass the stable delivery key
+to Resend, and concurrent idempotency responses are retried rather than treated as permanent failure.
+Invitation and reset domain records retain only one-time secret hashes.
 
 Events are integration signals, not authorization proof. Consumers validate the issuer, event ID, schema version, timestamp, and replay/idempotency key, and recheck current membership before sensitive action.
 

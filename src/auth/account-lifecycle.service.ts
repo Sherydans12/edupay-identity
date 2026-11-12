@@ -126,6 +126,66 @@ export class AccountLifecycleService {
         if (existingReceipt) return this.replayProvisioningReceipt(existingReceipt, payloadHash);
       }
 
+      const pendingUsername = await transaction.loginIdentifier.findFirst({
+        where: {
+          tenantRealmId: tenantId,
+          kind: LoginIdentifierKind.USERNAME,
+          normalizedValue: username,
+        },
+        select: { userId: true },
+      });
+
+      if (pendingUsername) {
+        const pendingMembership = await transaction.tenantMembership.findUnique({
+          where: {
+            userId_tenantRealmId: {
+              userId: pendingUsername.userId,
+              tenantRealmId: tenantId,
+            },
+          },
+          include: {
+            roles: { include: { role: true } },
+            user: {
+              include: {
+                loginIdentifiers: {
+                  where: { kind: LoginIdentifierKind.EMAIL },
+                },
+              },
+            },
+          },
+        });
+
+        if (pendingMembership?.status === MembershipStatus.PENDING_ACTIVATION) {
+          const existingRoles = pendingMembership.roles.map((role) => role.role.code).sort();
+          const requestedRoles = [...input.roles].sort();
+          const rolesMatch =
+            existingRoles.length === requestedRoles.length &&
+            existingRoles.every((role, index) => role === requestedRoles[index]);
+          const existingEmail = pendingMembership.user.loginIdentifiers[0]?.normalizedValue;
+          const emailMatches =
+            (!email && !existingEmail) || (Boolean(email) && existingEmail === email);
+          const userMatches = !input.userId || input.userId === pendingUsername.userId;
+
+          if (rolesMatch && emailMatches && userMatches) {
+            return {
+              userId: pendingMembership.userId,
+              membershipId: pendingMembership.id,
+              tenantId,
+              institutionalUsername: username,
+              ...(email ? { email } : {}),
+              status: pendingMembership.status,
+              roles: existingRoles,
+              activation: {
+                emailInvitationAvailable: Boolean(email),
+                activationChallengeAvailable: !email,
+              },
+            };
+          }
+        }
+
+        this.conflict('The requested membership cannot be created.');
+      }
+
       let user = input.userId
         ? await transaction.identityUser.findUnique({ where: { id: input.userId } })
         : null;

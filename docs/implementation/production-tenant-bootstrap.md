@@ -27,7 +27,7 @@ pnpm bootstrap:tenant-admin -- \
   --email <intended-admin-email>
 ```
 
-Optional `--request-id <operator-request-id>` adds a safe correlation identifier. The command requires `DATABASE_URL` and the normal Identity Argon2/opaque-token configuration. Code mode also uses `IDENTITY_ACTIVATION_TTL_SECONDS`. Email mode additionally requires `IDENTITY_EMAIL_FROM`, `IDENTITY_PUBLIC_BASE_URL`, invitation/outbox settings, and the production outbox encryption key. It queues an encrypted outbox intent; the command never calls Resend directly. The normal separately operated Identity email runner performs delivery.
+Optional `--request-id <operator-request-id>` adds a safe correlation identifier. The command requires `DATABASE_URL` and the normal Identity Argon2/opaque-token configuration. Code mode also uses `IDENTITY_ACTIVATION_TTL_SECONDS`. Email mode additionally requires `IDENTITY_EMAIL_FROM`, `IDENTITY_PUBLIC_BASE_URL`, invitation/outbox settings, and the production outbox encryption key. Set `IDENTITY_ACCOUNT_UI_BASE_URL` to the public web origin that serves `/activate` and `/reset-password` (Académico for this ecosystem); if omitted, the service falls back to `IDENTITY_PUBLIC_BASE_URL` for compatibility. It queues an encrypted outbox intent; the command never calls Resend directly. The Identity email outbox runner and the in-process sweeper deliver pending intents with the same provider idempotency key.
 
 Code mode prints the activation code exactly once in an explicitly marked sensitive block. Copy it to the approved handoff channel and do not retain the secret in shell transcripts, logs, tickets, or release evidence. Persistence and audit contain only its Argon2 hash and non-secret challenge ID.
 

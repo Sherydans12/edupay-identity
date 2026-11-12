@@ -1,5 +1,15 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { Injectable, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from 'node:crypto';
+import {
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '../generated/prisma/client.js';
 import { OutboxStatus } from '../generated/prisma/enums.js';
@@ -84,7 +94,10 @@ class EmailPayloadProtector {
 }
 
 @Injectable()
-export class EmailOutboxService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class EmailOutboxService
+  implements OnApplicationBootstrap, OnApplicationShutdown
+{
+  private readonly logger = new Logger(EmailOutboxService.name);
   private readonly protector: EmailPayloadProtector;
   private readonly maxAttempts: number;
   private readonly baseBackoffSeconds: number;
@@ -102,9 +115,13 @@ export class EmailOutboxService implements OnApplicationBootstrap, OnApplication
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.deliverPending().catch(() => {});
+    await this.deliverPending().catch(() => {
+      this.logger.error('Initial Identity email outbox sweep failed.');
+    });
     this.timer = setInterval(() => {
-      void this.deliverPending().catch(() => {});
+      void this.deliverPending().catch(() => {
+        this.logger.error('Scheduled Identity email outbox sweep failed.');
+      });
     }, 5_000);
     this.timer.unref();
   }
@@ -131,7 +148,9 @@ export class EmailOutboxService implements OnApplicationBootstrap, OnApplication
       },
     });
     setImmediate(() => {
-      void this.deliverPending().catch(() => {});
+      void this.deliverPending().catch(() => {
+        this.logger.error('Immediate Identity email outbox sweep failed.');
+      });
     });
     return created;
   }

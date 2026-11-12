@@ -12,6 +12,12 @@ EduPay Identity is an independent centralized identity service for EduPay ecosys
 - [Arquitectura, contratos y ADRs](architecture/identity-architecture.md), [API](architecture/api-contracts.md), [decisiones](decisions/README.md)
 - [Bootstrap coordinado de tenant Identity/Académico](implementation/production-tenant-bootstrap.md)
 
+La configuración de correo debe definir `IDENTITY_ACCOUNT_UI_BASE_URL` con el
+origen público que sirve `/activate` y `/reset-password` (Académico en este
+ecosistema). Si se omite, Identity usa `IDENTITY_PUBLIC_BASE_URL` por
+compatibilidad. El código fuente y `main` no confirman por sí solos un release
+ni una configuración productiva.
+
 El piloto DIE está desplegado como módulo de Académico pero sigue sin
 configuración ni validación con usuarios reales. El release no creó cuentas,
 memberships, perfiles ni expedientes de piloto. La verificación productiva más

@@ -21,17 +21,40 @@ const message: EmailMessage = {
   html: '<p>Synthetic recovery body</p>',
 };
 
-describe('ResendEmailAdapter diagnostics', () => {
+describe('ResendEmailAdapter', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('retries concurrent idempotency conflicts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ name: 'concurrent_idempotent_requests' }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const error = await new ResendEmailAdapter(config())
+      .send(message, 'invitation:synthetic')
+      .catch((value) => value as Error);
+
+    expect(error).toMatchObject({
+      safeCode: 'RESEND_IDEMPOTENCY_CONCURRENT',
+      retryable: true,
+    });
   });
 
   it('retains only an allowlisted provider code and scrubbed message', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({
-        name: 'invalid_api_key',
-        message: 'API key is invalid for user@example.com; see https://provider.invalid/details?token=secret',
-      }), { status: 400, headers: { 'content-type': 'application/json' } }),
+      new Response(
+        JSON.stringify({
+          name: 'invalid_api_key',
+          message:
+            'API key is invalid for user@example.com; see https://provider.invalid/details?token=secret',
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
     );
 
     const error = await new ResendEmailAdapter(config())
@@ -43,9 +66,21 @@ describe('ResendEmailAdapter diagnostics', () => {
       retryable: false,
       providerDiagnostic: { code: 'invalid_api_key' },
     });
-    expect(error).toHaveProperty('providerDiagnostic.message', expect.stringContaining('API key is invalid'));
-    expect(error).toHaveProperty('providerDiagnostic.message', expect.not.stringContaining('user@example.com'));
-    expect(error).toHaveProperty('providerDiagnostic.message', expect.not.stringContaining('https://'));
-    expect(error).toHaveProperty('providerDiagnostic.message', expect.not.stringContaining('token=secret'));
+    expect(error).toHaveProperty(
+      'providerDiagnostic.message',
+      expect.stringContaining('API key is invalid'),
+    );
+    expect(error).toHaveProperty(
+      'providerDiagnostic.message',
+      expect.not.stringContaining('user@example.com'),
+    );
+    expect(error).toHaveProperty(
+      'providerDiagnostic.message',
+      expect.not.stringContaining('https://'),
+    );
+    expect(error).toHaveProperty(
+      'providerDiagnostic.message',
+      expect.not.stringContaining('token=secret'),
+    );
   });
 });

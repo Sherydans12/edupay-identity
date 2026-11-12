@@ -24,10 +24,15 @@ function config(): ConfigService<Environment, true> {
 }
 
 function encryptedMessage(message: EmailMessage) {
-  const key = createHash('sha256').update('edupay-identity-development-outbox-key').digest();
+  const key = createHash('sha256')
+    .update('edupay-identity-development-outbox-key')
+    .digest();
   const iv = Buffer.alloc(12, 0);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(message), 'utf8'), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(message), 'utf8'),
+    cipher.final(),
+  ]);
   return {
     version: 1,
     iv: iv.toString('base64url'),
@@ -63,8 +68,11 @@ describe('EmailOutboxService delivery lifecycle', () => {
     vi.useFakeTimers();
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = { outboxEvent: { findMany } };
-    const adapter = {} as EmailDeliveryAdapter;
-    const service = new EmailOutboxService(prisma as never, adapter, config());
+    const service = new EmailOutboxService(
+      prisma as never,
+      {} as EmailDeliveryAdapter,
+      config(),
+    );
 
     await service.onApplicationBootstrap();
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -80,9 +88,15 @@ describe('EmailOutboxService delivery lifecycle', () => {
   it('does not concurrently drain one outbox batch twice', async () => {
     const findMany = vi.fn().mockResolvedValue([pendingEvent()]);
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const send = vi.fn().mockResolvedValue({ providerResponseId: 'synthetic-provider-id' });
+    const send = vi.fn().mockResolvedValue({
+      providerResponseId: 'synthetic-provider-id',
+    });
     const prisma = { outboxEvent: { findMany, updateMany } };
-    const service = new EmailOutboxService(prisma as never, { send } as EmailDeliveryAdapter, config());
+    const service = new EmailOutboxService(
+      prisma as never,
+      { send } as EmailDeliveryAdapter,
+      config(),
+    );
 
     await Promise.all([service.deliverPending(), service.deliverPending()]);
 
@@ -101,17 +115,23 @@ describe('EmailOutboxService delivery lifecycle', () => {
       }),
     );
     const prisma = { outboxEvent: { findMany, updateMany } };
-    const service = new EmailOutboxService(prisma as never, { send } as EmailDeliveryAdapter, config());
+    const service = new EmailOutboxService(
+      prisma as never,
+      { send } as EmailDeliveryAdapter,
+      config(),
+    );
 
     await service.deliverPending();
     await service.deliverPending();
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        status: 'FAILED',
-        lastError: 'RESEND_PROVIDER_REJECTED[invalid_api_key: API key is invalid]',
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'FAILED',
+          lastError: 'RESEND_PROVIDER_REJECTED[invalid_api_key: API key is invalid]',
+        }),
       }),
-    }));
+    );
   });
 });
