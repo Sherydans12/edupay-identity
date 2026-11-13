@@ -81,11 +81,10 @@ jobs:
           docker run --rm --entrypoint node "$IMMUTABLE_REFERENCE" dist/bootstrap/identity-email-correction-main.js --help
           docker run --rm --entrypoint node "$IMMUTABLE_REFERENCE" dist/bootstrap/identity-email-verification-main.js --help
           {
-            echo "## Identity runtime publicado"
-            echo
-            echo "- Código fuente: `$SOURCE_SHA`"
-            echo "- Imagen inmutable: `$IMMUTABLE_REFERENCE`"
-            echo "- Plataforma: `linux/amd64`"
-            echo "- Attestations: provenance y SBOM verificados"
+            printf '%s\n' '## Identity runtime publicado' ''
+            printf '%s\n' "- Código fuente: $SOURCE_SHA"
+            printf '%s\n' "- Imagen inmutable: $IMMUTABLE_REFERENCE"
+            printf '%s\n' '- Plataforma: linux/amd64'
+            printf '%s\n' '- Attestations: provenance y SBOM verificados'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "IDENTITY_RUNTIME_IMAGE=$IMMUTABLE_REFERENCE"

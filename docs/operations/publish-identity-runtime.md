@@ -24,6 +24,10 @@ reinicia Coolify.
    Usa esa referencia por digest en Coolify para desplegar exactamente el
    artefacto validado. El tag por SHA ayuda a localizar la versión publicada.
 
+   No uses el digest que aparece en la lista **Artifacts** junto a un archivo
+   `.dockerbuild`: ese valor identifica el archivo de diagnóstico de Buildx,
+   no la imagen runtime.
+
 ## Desplegar en Coolify
 
 1. Edita la imagen del recurso **Identity** y reemplázala por la referencia por
