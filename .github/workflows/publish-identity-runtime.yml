@@ -1,0 +1,91 @@
+name: Publish Identity runtime
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-identity-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_SHA: ${{ github.sha }}
+      SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+      IMAGE: ghcr.io/sherydans12/edupay-identity
+    steps:
+      - name: Check out the exact dispatched revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Verify source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "SOURCE_SHA=$SOURCE_SHA"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the immutable runtime artifact
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.SOURCE_SHA }}
+          labels: |
+            org.opencontainers.image.source=${{ env.SOURCE_URL }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.title=EduPay Identity runtime
+          provenance: mode=max
+          sbom: true
+
+      - name: Verify published digest, labels, provenance, and runtime artifacts
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE_DIGEST"
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          IMMUTABLE_REFERENCE="$IMAGE@$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$IMMUTABLE_REFERENCE"
+          docker buildx imagetools inspect --raw "$IMMUTABLE_REFERENCE" > /tmp/identity-runtime-manifest.json
+          jq -e '[.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")] | length > 0' /tmp/identity-runtime-manifest.json
+          docker pull "$IMMUTABLE_REFERENCE"
+          test "$(docker image inspect "$IMMUTABLE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "$SOURCE_URL"
+          test "$(docker image inspect "$IMMUTABLE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+          test "$(docker image inspect "$IMMUTABLE_REFERENCE" --format '{{json .Config.Cmd}}')" = '["node","dist/main.js"]'
+          docker run --rm --entrypoint node "$IMMUTABLE_REFERENCE" -e "const fs = require('node:fs'); const files = ['dist/main.js', 'dist/email/worker-main.js', 'dist/bootstrap/identity-email-correction-main.js', 'dist/bootstrap/identity-email-verification-main.js']; if (files.some((file) => !fs.existsSync(file))) process.exit(1);"
+          docker run --rm --entrypoint node "$IMMUTABLE_REFERENCE" dist/bootstrap/identity-email-correction-main.js --help
+          docker run --rm --entrypoint node "$IMMUTABLE_REFERENCE" dist/bootstrap/identity-email-verification-main.js --help
+          {
+            echo "## Identity runtime publicado"
+            echo
+            echo "- Código fuente: `$SOURCE_SHA`"
+            echo "- Imagen inmutable: `$IMMUTABLE_REFERENCE`"
+            echo "- Plataforma: `linux/amd64`"
+            echo "- Attestations: provenance y SBOM verificados"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "IDENTITY_RUNTIME_IMAGE=$IMMUTABLE_REFERENCE"

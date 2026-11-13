@@ -1,7 +1,6 @@
 # EduPay Identity documentation
 
-Status: implemented Identity service; the current documented release is dated 2026-09-24.
-Latest reported Git `origin/main` on 2026-09-24: `57b8827008c4a7b92c60a435b3fb1bc4f7554492`. This Git ref is not the deployed image identity. The last runtime evidence is the linked release closeout; this edit does not recheck Coolify.
+Status: implemented Identity service. The latest documented production evidence is dated 2026-09-24 and is described in the linked release closeout. A Git revision does not by itself identify the image deployed in Coolify.
 
 EduPay Identity is an independent centralized identity service for EduPay ecosystem applications. It is the source of truth for authentication and access-management implementation details. EduPay Académico consumes this service through explicit contracts and remains the owner of academic records.
 
@@ -9,6 +8,7 @@ EduPay Identity is an independent centralized identity service for EduPay ecosys
 
 - [Mapa transversal: dominios, integraciones, estado y pendientes](https://github.com/Sherydans12/edupay-academico/blob/main/docs/architecture/edupay-ecosystem-architecture.md)
 - [Release DIE y evidencia de producción del 24/09](operations/die-release-authorization-runbook.md)
+- [Publicación y despliegue de la imagen runtime](operations/publish-identity-runtime.md)
 - [Arquitectura, contratos y ADRs](architecture/identity-architecture.md), [API](architecture/api-contracts.md), [decisiones](decisions/README.md)
 - [Bootstrap coordinado de tenant Identity/Académico](implementation/production-tenant-bootstrap.md)
 
